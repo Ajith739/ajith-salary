@@ -1,10 +1,21 @@
 <?php
 /**
  * Authentication Helper Functions
+ * Supports standard PHP sessions with cryptographic HMAC auth cookie fallback
+ * for stateless serverless environments like Vercel.
  */
 
 require_once __DIR__ . '/../config/app.php';
 require_once __DIR__ . '/../config/database.php';
+
+/**
+ * Detect whether current connection is HTTPS (including Vercel / Cloudflare reverse proxies)
+ */
+function isHttps(): bool {
+    return (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+        || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
+}
 
 /**
  * Start secure session
@@ -15,12 +26,94 @@ function startSecureSession(): void {
         session_set_cookie_params([
             'lifetime' => SESSION_LIFETIME,
             'path'     => '/',
-            'secure'   => false,  // set true if using HTTPS
-            'httponly'  => true,
-            'samesite'  => 'Strict'
+            'secure'   => isHttps(),
+            'httponly' => true,
+            'samesite' => 'Lax'
         ]);
         session_start();
     }
+}
+
+/**
+ * Set cryptographic auth cookie for serverless persistence
+ */
+function setAuthCookie(int $userId, string $name, string $email, string $theme): void {
+    $payload = json_encode([
+        'uid'   => $userId,
+        'name'  => $name,
+        'email' => $email,
+        'theme' => $theme,
+        'exp'   => time() + (SESSION_LIFETIME * 7) // 7 days
+    ]);
+    
+    $encoded = base64_encode($payload);
+    $sig = hash_hmac('sha256', $encoded, APP_SECRET);
+    $val = $encoded . '.' . $sig;
+    
+    if (!headers_sent()) {
+        setcookie('myfinance_auth', $val, [
+            'expires'  => time() + (SESSION_LIFETIME * 7),
+            'path'     => '/',
+            'secure'   => isHttps(),
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ]);
+    }
+    $_COOKIE['myfinance_auth'] = $val;
+}
+
+/**
+ * Verify and restore session from auth cookie if session was lost in serverless lambda
+ */
+function restoreAuthFromCookie(): bool {
+    if (empty($_COOKIE['myfinance_auth'])) {
+        return false;
+    }
+    
+    $parts = explode('.', $_COOKIE['myfinance_auth'], 2);
+    if (count($parts) !== 2) {
+        return false;
+    }
+    
+    [$encoded, $sig] = $parts;
+    $expectedSig = hash_hmac('sha256', $encoded, APP_SECRET);
+    if (!hash_equals($expectedSig, $sig)) {
+        return false;
+    }
+    
+    $data = json_decode(base64_decode($encoded), true);
+    if (!is_array($data) || empty($data['uid']) || empty($data['exp'])) {
+        return false;
+    }
+    
+    if (time() > (int)$data['exp']) {
+        clearAuthCookie();
+        return false;
+    }
+    
+    $_SESSION['user_id'] = (int)$data['uid'];
+    $_SESSION['user_name'] = $data['name'] ?? '';
+    $_SESSION['user_email'] = $data['email'] ?? '';
+    $_SESSION['user_theme'] = $data['theme'] ?? 'light';
+    $_SESSION['login_time'] = time();
+    
+    return true;
+}
+
+/**
+ * Clear auth cookie
+ */
+function clearAuthCookie(): void {
+    if (!headers_sent()) {
+        setcookie('myfinance_auth', '', [
+            'expires'  => time() - 86400,
+            'path'     => '/',
+            'secure'   => isHttps(),
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ]);
+    }
+    unset($_COOKIE['myfinance_auth']);
 }
 
 /**
@@ -28,7 +121,10 @@ function startSecureSession(): void {
  */
 function isLoggedIn(): bool {
     startSecureSession();
-    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+    if (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
+        return true;
+    }
+    return restoreAuthFromCookie();
 }
 
 /**
@@ -45,6 +141,9 @@ function requireAuth(): void {
  * Get current user ID
  */
 function getCurrentUserId(): int {
+    if (!isLoggedIn()) {
+        return 0;
+    }
     return (int)($_SESSION['user_id'] ?? 0);
 }
 
@@ -133,8 +232,11 @@ function loginUser(string $email, string $password): array {
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['user_name'] = $user['name'];
     $_SESSION['user_email'] = $user['email'];
-    $_SESSION['user_theme'] = $user['theme'];
+    $_SESSION['user_theme'] = $user['theme'] ?? 'light';
     $_SESSION['login_time'] = time();
+    
+    // Set persistent signed auth cookie for serverless compatibility
+    setAuthCookie((int)$user['id'], (string)$user['name'], (string)$user['email'], (string)($user['theme'] ?? 'light'));
     
     return ['success' => true, 'user' => $user];
 }
@@ -150,4 +252,5 @@ function logoutUser(): void {
         setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
     }
     session_destroy();
+    clearAuthCookie();
 }

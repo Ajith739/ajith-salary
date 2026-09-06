@@ -13,12 +13,15 @@ define('APP_TIMEZONE', 'Asia/Kolkata');
 define('SESSION_LIFETIME', 86400); // 24 hours
 define('SESSION_NAME', 'myfinance_session');
 
+// Security Secret Key
+define('APP_SECRET', getenv('APP_SECRET') ?: 'myfinance_jwt_hmac_secret_key_secure_2026');
+
 // Paths
 define('ROOT_PATH', dirname(__DIR__));
 define('CONFIG_PATH', ROOT_PATH . '/config');
 define('INCLUDES_PATH', ROOT_PATH . '/includes');
 define('PUBLIC_PATH', ROOT_PATH . '/public');
-define('ASSETS_PATH', ROOT_PATH . '/assets');
+define('ASSETS_PATH', PUBLIC_PATH . '/assets');
 
 // Set timezone
 date_default_timezone_set(APP_TIMEZONE);

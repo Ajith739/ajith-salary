@@ -45,12 +45,12 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- App JS -->
-    <script src="../assets/js/app.js"></script>
+    <script src="assets/js/app.js"></script>
     <?php if (PAGE_ID === 'dashboard'): ?>
-    <script src="../assets/js/three-bg.js"></script>
-    <script src="../assets/js/dashboard.js"></script>
+    <script src="assets/js/three-bg.js"></script>
+    <script src="assets/js/dashboard.js"></script>
     <?php endif; ?>
-    <script src="../assets/js/charts.js"></script>
-    <script src="../assets/js/animations.js"></script>
+    <script src="assets/js/charts.js"></script>
+    <script src="assets/js/animations.js"></script>
 </body>
 </html>

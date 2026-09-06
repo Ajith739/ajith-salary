@@ -31,7 +31,7 @@ $csrfToken = generateCSRFToken();
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <?php endif; ?>
     <!-- Custom CSS -->
-    <link href="../assets/css/style.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
     
     <meta name="csrf-token" content="<?= e($csrfToken) ?>">
 </head>
