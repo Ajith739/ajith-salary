@@ -68,6 +68,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $successMsg = 'Contribution of ' . formatINR($amount) . ' saved to goal!';
             }
+        } elseif ($action === 'edit_goal') {
+            $goalId = (int)($_POST['goal_id'] ?? 0);
+            $name = sanitize($_POST['name'] ?? '');
+            $targetAmount = (float)($_POST['target_amount'] ?? 0);
+            $savedAmount = (float)($_POST['saved_amount'] ?? 0);
+            $monthlyContrib = (float)($_POST['monthly_contribution'] ?? 0);
+            $targetDate = !empty($_POST['target_date']) ? sanitize($_POST['target_date']) : null;
+            $priority = sanitize($_POST['priority'] ?? 'medium');
+            $icon = sanitize($_POST['icon'] ?? 'fa-bullseye');
+            $color = sanitize($_POST['color'] ?? '#3b82f6');
+            $notes = sanitize($_POST['notes'] ?? '');
+
+            if ($goalId <= 0 || empty($name) || $targetAmount <= 0) {
+                $errorMsg = 'Goal name and target amount are required.';
+            } else {
+                $stmt = $db->prepare(
+                    'UPDATE financial_goals SET 
+                     name = ?, target_amount = ?, saved_amount = ?, monthly_contribution = ?, 
+                     target_date = ?, priority = ?, icon = ?, color = ?, notes = ? 
+                     WHERE id = ? AND user_id = ?'
+                );
+                $stmt->execute([$name, $targetAmount, $savedAmount, $monthlyContrib, $targetDate, $priority, $icon, $color, $notes, $goalId, $userId]);
+                $successMsg = "Goal '{$name}' updated successfully!";
+            }
         } elseif ($action === 'delete_goal') {
             $goalId = (int)($_POST['goal_id'] ?? 0);
             $stmt = $db->prepare('DELETE FROM financial_goals WHERE id = ? AND user_id = ?');
@@ -214,9 +238,12 @@ include __DIR__ . '/../includes/header.php';
         </div>
 
         <!-- Actions -->
-        <div style="display: flex; gap: 0.5rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
             <button class="btn-primary-custom btn-sm-custom" style="flex: 1;" onclick="openAddContributionModal(<?= $g['id'] ?>, '<?= e($g['name']) ?>')">
                 <i class="fas fa-plus"></i> Add Funds
+            </button>
+            <button type="button" class="btn-table-action edit" title="Edit Goal" onclick='openEditGoalModal(<?= htmlspecialchars(json_encode($g), ENT_QUOTES, "UTF-8") ?>)'>
+                <i class="fas fa-edit"></i>
             </button>
             <form method="POST" action="" onsubmit="return confirm('Delete this goal?');">
                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
@@ -357,6 +384,113 @@ function openAddContributionModal(goalId, goalName) {
         </form>
     `;
     window.openModal('Add Savings to ' + goalName, html);
+}
+
+function openEditGoalModal(goal) {
+    if (!goal) return;
+    const priorities = ['critical', 'high', 'medium', 'low'];
+    const prioOptions = priorities.map(p => `<option value="${p}" ${goal.priority === p ? 'selected' : ''}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`).join('');
+
+    const colors = [
+        { val: '#3b82f6', label: 'Blue' },
+        { val: '#10b981', label: 'Emerald Green' },
+        { val: '#f59e0b', label: 'Amber Gold' },
+        { val: '#8b5cf6', label: 'Purple' },
+        { val: '#ec4899', label: 'Pink' },
+        { val: '#06b6d4', label: 'Cyan' }
+    ];
+    const colorOptions = colors.map(c => `<option value="${c.val}" ${goal.color === c.val ? 'selected' : ''}>${c.label}</option>`).join('');
+
+    const icons = [
+        { val: 'fa-bullseye', label: 'Target / General' },
+        { val: 'fa-tablet-alt', label: 'Tablet / Tech' },
+        { val: 'fa-laptop', label: 'Laptop' },
+        { val: 'fa-tshirt', label: 'Appliance' },
+        { val: 'fa-fire', label: 'Home Appliance' },
+        { val: 'fa-car', label: 'Vehicle / Bike' },
+        { val: 'fa-plane', label: 'Travel / Vacation' },
+        { val: 'fa-shield-alt', label: 'Emergency Fund' }
+    ];
+    const iconOptions = icons.map(i => `<option value="${i.val}" ${goal.icon === i.val ? 'selected' : ''}>${i.label}</option>`).join('');
+
+    const html = `
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="action" value="edit_goal">
+            <input type="hidden" name="goal_id" value="${goal.id}">
+            
+            <div class="form-group-custom">
+                <label>Goal / Item Name *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-bullseye"></i>
+                    <input type="text" name="name" value="${goal.name || ''}" required>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group-custom">
+                    <label>Target Amount (₹) *</label>
+                    <div class="input-icon-wrap">
+                        <i class="fas fa-rupee-sign"></i>
+                        <input type="number" step="0.01" min="1" name="target_amount" value="${goal.target_amount}" required>
+                    </div>
+                </div>
+                <div class="form-group-custom">
+                    <label>Saved Amount (₹)</label>
+                    <div class="input-icon-wrap">
+                        <i class="fas fa-rupee-sign"></i>
+                        <input type="number" step="0.01" min="0" name="saved_amount" value="${goal.saved_amount}">
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group-custom">
+                    <label>Monthly Contribution (₹)</label>
+                    <div class="input-icon-wrap">
+                        <i class="fas fa-piggy-bank"></i>
+                        <input type="number" step="0.01" min="0" name="monthly_contribution" value="${goal.monthly_contribution}">
+                    </div>
+                </div>
+                <div class="form-group-custom">
+                    <label>Target Date</label>
+                    <input type="date" name="target_date" value="${goal.target_date || ''}">
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group-custom">
+                    <label>Priority</label>
+                    <select name="priority">
+                        ${prioOptions}
+                    </select>
+                </div>
+                <div class="form-group-custom">
+                    <label>Color Accent</label>
+                    <select name="color">
+                        ${colorOptions}
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Icon</label>
+                <select name="icon">
+                    ${iconOptions}
+                </select>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Notes (optional)</label>
+                <textarea name="notes" rows="2">${goal.notes || ''}</textarea>
+            </div>
+            
+            <button type="submit" class="btn-primary-custom btn-full" style="margin-top: 0.5rem;">
+                <i class="fas fa-save"></i> Update Goal
+            </button>
+        </form>
+    `;
+    window.openModal('Edit Financial Goal', html);
 }
 </script>
 

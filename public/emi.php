@@ -55,6 +55,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 generateMonthlyFinancialRecord($userId, (int)date('Y'), (int)date('n'));
                 $successMsg = "Loan '{$name}' added with monthly EMI of " . formatINR($emiAmount);
             }
+        } elseif ($action === 'edit_loan') {
+            $loanId = (int)($_POST['loan_id'] ?? 0);
+            $name = sanitize($_POST['loan_name'] ?? '');
+            $principal = (float)($_POST['principal'] ?? 0);
+            $rate = (float)($_POST['annual_interest_rate'] ?? 0);
+            $tenure = (int)($_POST['tenure_months'] ?? 0);
+            $startDate = sanitize($_POST['start_date'] ?? date('Y-m-d'));
+            $active = isset($_POST['active']) ? (int)$_POST['active'] : 1;
+            $notes = sanitize($_POST['notes'] ?? '');
+
+            if ($loanId <= 0 || empty($name) || $principal <= 0 || $tenure <= 0 || !isValidDate($startDate)) {
+                $errorMsg = 'Please enter valid loan parameters.';
+            } else {
+                $emiData = calculateEMI($principal, $rate, $tenure);
+                $stmt = $db->prepare(
+                    'UPDATE loans SET 
+                     loan_name = ?, principal = ?, annual_interest_rate = ?, tenure_months = ?, 
+                     start_date = ?, emi_amount = ?, total_interest = ?, total_payable = ?, active = ?, notes = ? 
+                     WHERE id = ? AND user_id = ?'
+                );
+                $stmt->execute([
+                    $name, $principal, $rate, $tenure, $startDate,
+                    $emiData['emi'], $emiData['total_interest'], $emiData['total_payable'],
+                    $active, $notes, $loanId, $userId
+                ]);
+
+                generateMonthlyFinancialRecord($userId, (int)date('Y'), (int)date('n'));
+                $successMsg = "Loan '{$name}' updated successfully!";
+            }
         } elseif ($action === 'delete_loan') {
             $loanId = (int)($_POST['loan_id'] ?? 0);
             $stmt = $db->prepare('DELETE FROM loans WHERE id = ? AND user_id = ?');
@@ -248,13 +277,13 @@ include __DIR__ . '/../includes/header.php';
             <thead>
                 <tr>
                     <th>Loan Name</th>
-                    <th>Principal</th>
-                    <th>Rate</th>
-                    <th>Tenure</th>
-                    <th>Monthly EMI</th>
-                    <th>Start Date</th>
-                    <th>Total Payable</th>
-                    <th style="text-align: right;">Actions</th>
+                    <th class="text-right">Principal</th>
+                    <th class="text-right">Rate</th>
+                    <th class="text-center">Tenure</th>
+                    <th class="text-right">Monthly EMI</th>
+                    <th class="text-center">Start Date</th>
+                    <th class="text-right">Total Payable</th>
+                    <th class="text-right">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -267,24 +296,29 @@ include __DIR__ . '/../includes/header.php';
                 <?php else: foreach ($loans as $loan): ?>
                 <tr>
                     <td style="font-weight: 700;"><?= e($loan['loan_name']) ?></td>
-                    <td><?= formatINR((float)$loan['principal']) ?></td>
-                    <td><?= (float)$loan['annual_interest_rate'] ?>%</td>
-                    <td><?= (int)$loan['tenure_months'] ?> mo</td>
-                    <td style="font-weight: 700; color: var(--danger-light);"><?= formatINR((float)$loan['emi_amount']) ?></td>
-                    <td><?= date('d M Y', strtotime($loan['start_date'])) ?></td>
-                    <td><?= formatINR((float)$loan['total_payable']) ?></td>
-                    <td style="text-align: right;">
-                        <button type="button" class="btn-table-action" title="View Schedule" onclick="viewLoanSchedule(<?= htmlspecialchars(json_encode($loan), ENT_QUOTES, 'UTF-8') ?>)">
-                            <i class="fas fa-calendar-check"></i>
-                        </button>
-                        <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Delete this loan?');">
-                            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-                            <input type="hidden" name="action" value="delete_loan">
-                            <input type="hidden" name="loan_id" value="<?= $loan['id'] ?>">
-                            <button type="submit" class="btn-table-action delete" title="Delete">
-                                <i class="fas fa-trash"></i>
+                    <td class="text-right"><?= formatINR((float)$loan['principal']) ?></td>
+                    <td class="text-right"><?= (float)$loan['annual_interest_rate'] ?>%</td>
+                    <td class="text-center"><?= (int)$loan['tenure_months'] ?> mo</td>
+                    <td class="text-right" style="font-weight: 700; color: var(--danger-light);"><?= formatINR((float)$loan['emi_amount']) ?></td>
+                    <td class="text-center"><?= date('d M Y', strtotime($loan['start_date'])) ?></td>
+                    <td class="text-right"><?= formatINR((float)$loan['total_payable']) ?></td>
+                    <td class="text-right">
+                        <div class="table-actions justify-end">
+                            <button type="button" class="btn-table-action edit" title="Edit Loan" onclick='openEditLoanModal(<?= htmlspecialchars(json_encode($loan), ENT_QUOTES, "UTF-8") ?>)'>
+                                <i class="fas fa-edit"></i>
                             </button>
-                        </form>
+                            <button type="button" class="btn-table-action view" title="View Schedule" onclick='viewLoanSchedule(<?= htmlspecialchars(json_encode($loan), ENT_QUOTES, "UTF-8") ?>)'>
+                                <i class="fas fa-calendar-check"></i>
+                            </button>
+                            <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Delete this loan?');">
+                                <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                                <input type="hidden" name="action" value="delete_loan">
+                                <input type="hidden" name="loan_id" value="<?= $loan['id'] ?>">
+                                <button type="submit" class="btn-table-action delete" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; endif; ?>
@@ -465,6 +499,74 @@ function openAddLoanModal() {
         </form>
     `;
     window.openModal('Add Active Loan / EMI', html);
+}
+
+function openEditLoanModal(loan) {
+    if (!loan) return;
+    const html = `
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="action" value="edit_loan">
+            <input type="hidden" name="loan_id" value="${loan.id}">
+            
+            <div class="form-group-custom">
+                <label>Loan / EMI Title *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-tag"></i>
+                    <input type="text" name="loan_name" value="${loan.loan_name || ''}" required>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group-custom">
+                    <label>Principal Amount (₹) *</label>
+                    <div class="input-icon-wrap">
+                        <i class="fas fa-rupee-sign"></i>
+                        <input type="number" step="0.01" min="1" name="principal" value="${loan.principal}" required>
+                    </div>
+                </div>
+                <div class="form-group-custom">
+                    <label>Interest Rate (% p.a.) *</label>
+                    <div class="input-icon-wrap">
+                        <i class="fas fa-percentage"></i>
+                        <input type="number" step="0.01" min="0" name="annual_interest_rate" value="${loan.annual_interest_rate}" required>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group-custom">
+                    <label>Tenure (Months) *</label>
+                    <div class="input-icon-wrap">
+                        <i class="fas fa-calendar-alt"></i>
+                        <input type="number" min="1" max="360" name="tenure_months" value="${loan.tenure_months}" required>
+                    </div>
+                </div>
+                <div class="form-group-custom">
+                    <label>Start Date *</label>
+                    <input type="date" name="start_date" value="${loan.start_date}" required>
+                </div>
+            </div>
+
+            <div class="form-group-custom">
+                <label>Status *</label>
+                <select name="active">
+                    <option value="1" ${loan.active == 1 ? 'selected' : ''}>Active (Ongoing EMI)</option>
+                    <option value="0" ${loan.active == 0 ? 'selected' : ''}>Closed / Completed</option>
+                </select>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Notes (optional)</label>
+                <textarea name="notes" rows="2">${loan.notes || ''}</textarea>
+            </div>
+            
+            <button type="submit" class="btn-primary-custom btn-full" style="margin-top: 0.5rem;">
+                <i class="fas fa-save"></i> Update Loan
+            </button>
+        </form>
+    `;
+    window.openModal('Edit Loan / EMI', html);
 }
 </script>
 

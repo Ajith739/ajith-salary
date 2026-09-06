@@ -44,9 +44,54 @@ if ($method === 'GET') {
 
     if ($action === 'delete') {
         $id = (int)($input['id'] ?? 0);
-        $stmt = $db->prepare('DELETE FROM expenses WHERE id = ? AND user_id = ?');
+        $stmt = $db->prepare('SELECT expense_date FROM expenses WHERE id = ? AND user_id = ?');
         $stmt->execute([$id, $userId]);
+        $exp = $stmt->fetch();
+
+        if ($exp) {
+            $stmt = $db->prepare('DELETE FROM expenses WHERE id = ? AND user_id = ?');
+            $stmt->execute([$id, $userId]);
+            $m = (int)date('n', strtotime($exp['expense_date']));
+            $y = (int)date('Y', strtotime($exp['expense_date']));
+            generateMonthlyFinancialRecord($userId, $y, $m);
+        }
         jsonResponse(['success' => true, 'message' => 'Expense deleted.']);
+    } elseif ($action === 'edit') {
+        $id = (int)($input['id'] ?? 0);
+        $title = sanitize($input['title'] ?? '');
+        $amount = (float)($input['amount'] ?? 0);
+        $category = sanitize($input['category'] ?? 'Other');
+        $expenseDate = sanitize($input['expense_date'] ?? date('Y-m-d'));
+        $paymentMethod = sanitize($input['payment_method'] ?? 'cash');
+        $notes = sanitize($input['notes'] ?? '');
+
+        if ($id <= 0 || empty($title) || $amount <= 0 || !isValidDate($expenseDate)) {
+            jsonResponse(['success' => false, 'message' => 'Invalid parameters'], 422);
+        }
+
+        $stmt = $db->prepare('SELECT expense_date FROM expenses WHERE id = ? AND user_id = ?');
+        $stmt->execute([$id, $userId]);
+        $oldExp = $stmt->fetch();
+
+        if (!$oldExp) {
+            jsonResponse(['success' => false, 'message' => 'Expense not found'], 404);
+        }
+
+        $stmt = $db->prepare(
+            'UPDATE expenses SET category = ?, title = ?, amount = ?, expense_date = ?, payment_method = ?, notes = ? 
+             WHERE id = ? AND user_id = ?'
+        );
+        $stmt->execute([$category, $title, $amount, $expenseDate, $paymentMethod, $notes, $id, $userId]);
+
+        $oldM = (int)date('n', strtotime($oldExp['expense_date']));
+        $oldY = (int)date('Y', strtotime($oldExp['expense_date']));
+        generateMonthlyFinancialRecord($userId, $oldY, $oldM);
+
+        $newM = (int)date('n', strtotime($expenseDate));
+        $newY = (int)date('Y', strtotime($expenseDate));
+        generateMonthlyFinancialRecord($userId, $newY, $newM);
+
+        jsonResponse(['success' => true, 'message' => 'Expense updated successfully']);
     } else {
         $title = sanitize($input['title'] ?? '');
         $amount = (float)($input['amount'] ?? 0);

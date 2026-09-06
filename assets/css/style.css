@@ -1587,9 +1587,34 @@ img, svg {
     transition: all var(--transition-fast);
 }
 
+.calendar-day-cell:not(.empty) {
+    cursor: pointer;
+}
+
 .calendar-day-cell:hover {
     border-color: var(--border-color-hover);
     transform: translateY(-2px);
+}
+
+.calendar-day-cell .btn-day-edit {
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 4px;
+}
+
+.calendar-day-cell:hover .btn-day-edit {
+    opacity: 1;
+}
+
+.calendar-day-cell .btn-day-edit:hover {
+    color: var(--primary-light);
+    background: rgba(99, 102, 241, 0.15);
 }
 
 .calendar-day-cell.empty {

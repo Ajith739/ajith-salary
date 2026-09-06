@@ -38,6 +38,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$userId, $name, $phone, $notes]);
                 $successMsg = "Friend '{$name}' added successfully!";
             }
+        } elseif ($action === 'edit_friend') {
+            $friendId = (int)($_POST['friend_id'] ?? 0);
+            $name = sanitize($_POST['name'] ?? '');
+            $phone = sanitize($_POST['phone'] ?? '');
+            $notes = sanitize($_POST['notes'] ?? '');
+
+            if ($friendId <= 0 || empty($name)) {
+                $errorMsg = 'Friend name is required.';
+            } else {
+                $stmt = $db->prepare('UPDATE friends SET name = ?, phone = ?, notes = ? WHERE id = ? AND user_id = ?');
+                $stmt->execute([$name, $phone, $notes, $friendId, $userId]);
+                $successMsg = "Friend '{$name}' updated successfully!";
+            }
         } elseif ($action === 'add_transaction') {
             $friendId = (int)($_POST['friend_id'] ?? 0);
             $type = sanitize($_POST['type'] ?? 'given'); // 'given' or 'repaid'
@@ -60,6 +73,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 generateMonthlyFinancialRecord($userId, $txYear, $txMonth);
                 
                 $successMsg = ($type === 'given' ? 'Loan of ' : 'Repayment of ') . formatINR($amount) . ' recorded!';
+            }
+        } elseif ($action === 'edit_transaction') {
+            $txId = (int)($_POST['transaction_id'] ?? 0);
+            $type = sanitize($_POST['type'] ?? 'given');
+            $amount = (float)($_POST['amount'] ?? 0);
+            $date = sanitize($_POST['transaction_date'] ?? date('Y-m-d'));
+            $desc = sanitize($_POST['description'] ?? '');
+
+            if ($txId <= 0 || $amount <= 0 || !isValidDate($date)) {
+                $errorMsg = 'Please provide valid transaction details.';
+            } else {
+                $stmt = $db->prepare('SELECT transaction_date FROM friend_transactions WHERE id = ? AND user_id = ?');
+                $stmt->execute([$txId, $userId]);
+                $oldTx = $stmt->fetch();
+
+                if ($oldTx) {
+                    $stmt = $db->prepare(
+                        'UPDATE friend_transactions SET type = ?, amount = ?, transaction_date = ?, description = ? WHERE id = ? AND user_id = ?'
+                    );
+                    $stmt->execute([$type, $amount, $date, $desc, $txId, $userId]);
+
+                    $oldM = (int)date('n', strtotime($oldTx['transaction_date']));
+                    $oldY = (int)date('Y', strtotime($oldTx['transaction_date']));
+                    generateMonthlyFinancialRecord($userId, $oldY, $oldM);
+
+                    $newM = (int)date('n', strtotime($date));
+                    $newY = (int)date('Y', strtotime($date));
+                    generateMonthlyFinancialRecord($userId, $newY, $newM);
+
+                    $successMsg = 'Transaction updated successfully!';
+                } else {
+                    $errorMsg = 'Transaction not found.';
+                }
+            }
+        } elseif ($action === 'delete_transaction') {
+            $txId = (int)($_POST['transaction_id'] ?? 0);
+            $stmt = $db->prepare('SELECT transaction_date FROM friend_transactions WHERE id = ? AND user_id = ?');
+            $stmt->execute([$txId, $userId]);
+            $oldTx = $stmt->fetch();
+
+            if ($oldTx) {
+                $stmt = $db->prepare('DELETE FROM friend_transactions WHERE id = ? AND user_id = ?');
+                $stmt->execute([$txId, $userId]);
+
+                $m = (int)date('n', strtotime($oldTx['transaction_date']));
+                $y = (int)date('Y', strtotime($oldTx['transaction_date']));
+                generateMonthlyFinancialRecord($userId, $y, $m);
+
+                $successMsg = 'Transaction removed.';
             }
         } elseif ($action === 'settle_up') {
             $friendId = (int)($_POST['friend_id'] ?? 0);
@@ -214,7 +276,7 @@ include __DIR__ . '/../includes/header.php';
         </div>
         
         <!-- Action buttons -->
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; align-items: center;">
             <button class="btn-primary-custom btn-sm-custom" style="flex: 1;" onclick="openQuickRepayModal(<?= $f['id'] ?>, '<?= e($f['name']) ?>', <?= $f['remaining'] ?>)">
                 <i class="fas fa-check"></i> Repay
             </button>
@@ -229,6 +291,9 @@ include __DIR__ . '/../includes/header.php';
                 </button>
             </form>
             <?php endif; ?>
+            <button type="button" class="btn-table-action edit" title="Edit Friend" onclick='openEditFriendModal(<?= htmlspecialchars(json_encode($f), ENT_QUOTES, "UTF-8") ?>)'>
+                <i class="fas fa-user-edit"></i>
+            </button>
             <form method="POST" action="" onsubmit="return confirm('Delete this friend and all history?');">
                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
                 <input type="hidden" name="action" value="delete_friend">
@@ -241,25 +306,47 @@ include __DIR__ . '/../includes/header.php';
         
         <!-- Mini Transactions History -->
         <div style="border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
-            <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem;">
-                Recent Transactions
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted);">
+                    Transactions History (<?= count($txList) ?>)
+                </span>
             </div>
             <?php if (empty($txList)): ?>
             <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 0.5rem 0;">
                 No transaction history.
             </div>
-            <?php else: foreach (array_slice($txList, 0, 3) as $tx): ?>
-            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; padding: 0.35rem 0; border-bottom: 1px dashed var(--border-color);">
-                <div>
-                    <span style="font-weight: 600; color: <?= $tx['type'] === 'given' ? 'var(--danger-light)' : 'var(--success)' ?>;">
-                        <?= $tx['type'] === 'given' ? 'Lent' : 'Repaid' ?>
-                    </span>
-                    <span style="font-size: 0.7rem; color: var(--text-muted); margin-left: 0.4rem;">
-                        <?= date('d M Y', strtotime($tx['transaction_date'])) ?>
-                    </span>
+            <?php else: foreach (array_slice($txList, 0, 5) as $tx): ?>
+            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; padding: 0.4rem 0; border-bottom: 1px dashed var(--border-color);">
+                <div style="flex: 1; min-width: 0; padding-right: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                        <span style="font-weight: 600; color: <?= $tx['type'] === 'given' ? 'var(--danger-light)' : 'var(--success)' ?>;">
+                            <?= $tx['type'] === 'given' ? 'Lent' : 'Repaid' ?>
+                        </span>
+                        <span style="font-size: 0.7rem; color: var(--text-muted);">
+                            <?= date('d M Y', strtotime($tx['transaction_date'])) ?>
+                        </span>
+                    </div>
+                    <?php if (!empty($tx['description'])): ?>
+                    <div style="font-size: 0.7rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <?= e($tx['description']) ?>
+                    </div>
+                    <?php endif; ?>
                 </div>
-                <div style="font-weight: 700; color: <?= $tx['type'] === 'given' ? 'var(--danger-light)' : 'var(--success)' ?>;">
-                    <?= $tx['type'] === 'given' ? '-' : '+' ?><?= formatINR((float)$tx['amount']) ?>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span style="font-weight: 700; color: <?= $tx['type'] === 'given' ? 'var(--danger-light)' : 'var(--success)' ?>;">
+                        <?= $tx['type'] === 'given' ? '-' : '+' ?><?= formatINR((float)$tx['amount']) ?>
+                    </span>
+                    <button type="button" class="btn-table-action edit" style="width: 26px; height: 26px; font-size: 0.7rem;" title="Edit Transaction" onclick='openEditTxModal(<?= htmlspecialchars(json_encode($tx), ENT_QUOTES, "UTF-8") ?>)'>
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Delete this transaction?');">
+                        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                        <input type="hidden" name="action" value="delete_transaction">
+                        <input type="hidden" name="transaction_id" value="<?= $tx['id'] ?>">
+                        <button type="submit" class="btn-table-action delete" style="width: 26px; height: 26px; font-size: 0.7rem;" title="Delete">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </form>
                 </div>
             </div>
             <?php endforeach; endif; ?>
@@ -302,6 +389,43 @@ function openAddFriendModal() {
         </form>
     `;
     window.openModal('Add New Friend', html);
+}
+
+function openEditFriendModal(f) {
+    if (!f) return;
+    const html = `
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="action" value="edit_friend">
+            <input type="hidden" name="friend_id" value="${f.id}">
+            
+            <div class="form-group-custom">
+                <label>Friend Name *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-user"></i>
+                    <input type="text" name="name" value="${f.name || ''}" required>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Phone Number</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-phone"></i>
+                    <input type="text" name="phone" value="${f.phone || ''}">
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Notes</label>
+                <textarea name="notes" rows="2">${f.notes || ''}</textarea>
+            </div>
+            
+            <button type="submit" class="btn-primary-custom btn-full" style="margin-top: 0.5rem;">
+                <i class="fas fa-save"></i> Update Friend
+            </button>
+        </form>
+    `;
+    window.openModal('Edit Friend Details', html);
 }
 
 function openRecordTxModal() {
@@ -351,6 +475,48 @@ function openRecordTxModal() {
         </form>
     `;
     window.openModal('Record Friend Transaction', html);
+}
+
+function openEditTxModal(tx) {
+    if (!tx) return;
+    const html = `
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="action" value="edit_transaction">
+            <input type="hidden" name="transaction_id" value="${tx.id}">
+            
+            <div class="form-group-custom">
+                <label>Transaction Type *</label>
+                <select name="type" required>
+                    <option value="given" ${tx.type === 'given' ? 'selected' : ''}>Money Given / Lent (They owe you)</option>
+                    <option value="repaid" ${tx.type === 'repaid' ? 'selected' : ''}>Money Received / Repaid (Debt reduced)</option>
+                </select>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Amount (₹) *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-rupee-sign"></i>
+                    <input type="number" step="0.01" min="0.01" name="amount" value="${tx.amount}" required>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Date *</label>
+                <input type="date" name="transaction_date" value="${tx.transaction_date}" required>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Description (optional)</label>
+                <textarea name="description" rows="2">${tx.description || ''}</textarea>
+            </div>
+            
+            <button type="submit" class="btn-primary-custom btn-full" style="margin-top: 0.5rem;">
+                <i class="fas fa-save"></i> Update Transaction
+            </button>
+        </form>
+    `;
+    window.openModal('Edit Transaction', html);
 }
 
 function openQuickRepayModal(friendId, friendName, remaining) {

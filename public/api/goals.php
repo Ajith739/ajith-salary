@@ -68,6 +68,31 @@ if ($method === 'GET') {
 
         jsonResponse(['success' => true, 'message' => 'Contribution added']);
 
+    } elseif ($action === 'edit_goal') {
+        $goalId = (int)($input['goal_id'] ?? 0);
+        $name = sanitize($input['name'] ?? '');
+        $targetAmount = (float)($input['target_amount'] ?? 0);
+        $savedAmount = (float)($input['saved_amount'] ?? 0);
+        $monthlyContrib = (float)($input['monthly_contribution'] ?? 0);
+        $targetDate = !empty($input['target_date']) ? sanitize($input['target_date']) : null;
+        $priority = sanitize($input['priority'] ?? 'medium');
+        $icon = sanitize($input['icon'] ?? 'fa-bullseye');
+        $color = sanitize($input['color'] ?? '#3b82f6');
+        $notes = sanitize($input['notes'] ?? '');
+
+        if ($goalId <= 0 || empty($name) || $targetAmount <= 0) {
+            jsonResponse(['success' => false, 'message' => 'Invalid goal parameters'], 422);
+        }
+
+        $stmt = $db->prepare(
+            'UPDATE financial_goals SET 
+             name = ?, target_amount = ?, saved_amount = ?, monthly_contribution = ?, 
+             target_date = ?, priority = ?, icon = ?, color = ?, notes = ? 
+             WHERE id = ? AND user_id = ?'
+        );
+        $stmt->execute([$name, $targetAmount, $savedAmount, $monthlyContrib, $targetDate, $priority, $icon, $color, $notes, $goalId, $userId]);
+        jsonResponse(['success' => true, 'message' => 'Goal updated']);
+
     } elseif ($action === 'delete_goal') {
         $goalId = (int)($input['goal_id'] ?? 0);
         $stmt = $db->prepare('DELETE FROM financial_goals WHERE id = ? AND user_id = ?');

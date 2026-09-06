@@ -57,6 +57,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $successMsg = 'Expense of ' . formatINR($amount) . ' added successfully!';
             }
+        } elseif ($action === 'edit_expense') {
+            $expenseId = (int)($_POST['expense_id'] ?? 0);
+            $title = sanitize($_POST['title'] ?? '');
+            $amount = (float)($_POST['amount'] ?? 0);
+            $category = sanitize($_POST['category'] ?? 'Other');
+            $expenseDate = sanitize($_POST['expense_date'] ?? date('Y-m-d'));
+            $paymentMethod = sanitize($_POST['payment_method'] ?? 'cash');
+            $isRecurring = isset($_POST['is_recurring']) ? 1 : 0;
+            $notes = sanitize($_POST['notes'] ?? '');
+
+            if ($expenseId <= 0 || empty($title) || $amount <= 0 || !isValidDate($expenseDate)) {
+                $errorMsg = 'Please provide a valid title, positive amount, and date.';
+            } else {
+                $stmt = $db->prepare('SELECT expense_date FROM expenses WHERE id = ? AND user_id = ?');
+                $stmt->execute([$expenseId, $userId]);
+                $oldExp = $stmt->fetch();
+
+                if ($oldExp) {
+                    $stmt = $db->prepare(
+                        'UPDATE expenses SET category = ?, title = ?, amount = ?, expense_date = ?, payment_method = ?, is_recurring = ?, notes = ? 
+                         WHERE id = ? AND user_id = ?'
+                    );
+                    $stmt->execute([$category, $title, $amount, $expenseDate, $paymentMethod, $isRecurring, $notes, $expenseId, $userId]);
+
+                    $oldM = (int)date('n', strtotime($oldExp['expense_date']));
+                    $oldY = (int)date('Y', strtotime($oldExp['expense_date']));
+                    generateMonthlyFinancialRecord($userId, $oldY, $oldM);
+
+                    $newM = (int)date('n', strtotime($expenseDate));
+                    $newY = (int)date('Y', strtotime($expenseDate));
+                    generateMonthlyFinancialRecord($userId, $newY, $newM);
+
+                    $successMsg = 'Expense updated successfully!';
+                } else {
+                    $errorMsg = 'Expense record not found.';
+                }
+            }
         } elseif ($action === 'delete_expense') {
             $expenseId = (int)($_POST['expense_id'] ?? 0);
             $stmt = $db->prepare('SELECT expense_date FROM expenses WHERE id = ? AND user_id = ?');
@@ -91,6 +128,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute([$userId, $name, $amount, $category, $frequency, $startDate, $notes]);
                 generateMonthlyFinancialRecord($userId, $year, $month);
                 $successMsg = 'Recurring expense added successfully!';
+            }
+        } elseif ($action === 'edit_recurring') {
+            $recId = (int)($_POST['recurring_id'] ?? 0);
+            $name = sanitize($_POST['name'] ?? '');
+            $amount = (float)($_POST['amount'] ?? 0);
+            $category = sanitize($_POST['category'] ?? 'Bills');
+            $frequency = sanitize($_POST['frequency'] ?? 'monthly');
+            $startDate = sanitize($_POST['start_date'] ?? date('Y-m-d'));
+            $notes = sanitize($_POST['notes'] ?? '');
+
+            if ($recId <= 0 || empty($name) || $amount <= 0 || !isValidDate($startDate)) {
+                $errorMsg = 'Please provide valid recurring bill details.';
+            } else {
+                $stmt = $db->prepare(
+                    'UPDATE recurring_expenses SET name = ?, amount = ?, category = ?, frequency = ?, start_date = ?, notes = ? 
+                     WHERE id = ? AND user_id = ?'
+                );
+                $stmt->execute([$name, $amount, $category, $frequency, $startDate, $notes, $recId, $userId]);
+                generateMonthlyFinancialRecord($userId, $year, $month);
+                $successMsg = 'Recurring expense updated successfully!';
             }
         } elseif ($action === 'delete_recurring') {
             $recId = (int)($_POST['recurring_id'] ?? 0);
@@ -258,9 +315,9 @@ include __DIR__ . '/../includes/header.php';
                     <th>Title</th>
                     <th>Category</th>
                     <th>Payment</th>
-                    <th>Amount</th>
+                    <th class="text-right">Amount</th>
                     <th>Notes</th>
-                    <th style="text-align: right;">Action</th>
+                    <th class="text-right">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -292,21 +349,26 @@ include __DIR__ . '/../includes/header.php';
                             <?= e($exp['payment_method']) ?>
                         </span>
                     </td>
-                    <td style="font-weight: 700; color: var(--danger-light); white-space: nowrap;">
+                    <td class="text-right" style="font-weight: 700; color: var(--danger-light); white-space: nowrap;">
                         -<?= formatINR((float)$exp['amount']) ?>
                     </td>
                     <td style="color: var(--text-muted); font-size: 0.825rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                         <?= e($exp['notes'] ?: '—') ?>
                     </td>
-                    <td style="text-align: right;">
-                        <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Delete this expense?');">
-                            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-                            <input type="hidden" name="action" value="delete_expense">
-                            <input type="hidden" name="expense_id" value="<?= $exp['id'] ?>">
-                            <button type="submit" class="btn-table-action delete" title="Delete Expense">
-                                <i class="fas fa-trash"></i>
+                    <td class="text-right">
+                        <div class="table-actions justify-end">
+                            <button type="button" class="btn-table-action edit" title="Edit Expense" onclick='openEditExpenseModal(<?= htmlspecialchars(json_encode($exp), ENT_QUOTES, "UTF-8") ?>)'>
+                                <i class="fas fa-edit"></i>
                             </button>
-                        </form>
+                            <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Delete this expense?');">
+                                <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                                <input type="hidden" name="action" value="delete_expense">
+                                <input type="hidden" name="expense_id" value="<?= $exp['id'] ?>">
+                                <button type="submit" class="btn-table-action delete" title="Delete Expense">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; endif; ?>
@@ -327,10 +389,10 @@ include __DIR__ . '/../includes/header.php';
                     <th>Bill / Service</th>
                     <th>Category</th>
                     <th>Frequency</th>
-                    <th>Amount</th>
+                    <th class="text-right">Amount</th>
                     <th>Start Date</th>
                     <th>Notes</th>
-                    <th style="text-align: right;">Action</th>
+                    <th class="text-right">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -345,18 +407,23 @@ include __DIR__ . '/../includes/header.php';
                     <td style="font-weight: 600;"><?= e($rec['name']) ?></td>
                     <td><span class="badge-custom status-active"><?= e($rec['category']) ?></span></td>
                     <td style="text-transform: capitalize; font-size: 0.85rem;"><?= e($rec['frequency']) ?></td>
-                    <td style="font-weight: 700; color: var(--danger-light);"><?= formatINR((float)$rec['amount']) ?></td>
+                    <td class="text-right" style="font-weight: 700; color: var(--danger-light);"><?= formatINR((float)$rec['amount']) ?></td>
                     <td><?= date('d M Y', strtotime($rec['start_date'])) ?></td>
                     <td style="color: var(--text-muted); font-size: 0.825rem;"><?= e($rec['notes'] ?: '—') ?></td>
-                    <td style="text-align: right;">
-                        <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Remove this recurring bill?');">
-                            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-                            <input type="hidden" name="action" value="delete_recurring">
-                            <input type="hidden" name="recurring_id" value="<?= $rec['id'] ?>">
-                            <button type="submit" class="btn-table-action delete" title="Delete">
-                                <i class="fas fa-trash"></i>
+                    <td class="text-right">
+                        <div class="table-actions justify-end">
+                            <button type="button" class="btn-table-action edit" title="Edit Recurring Bill" onclick='openEditRecurringModal(<?= htmlspecialchars(json_encode($rec), ENT_QUOTES, "UTF-8") ?>)'>
+                                <i class="fas fa-edit"></i>
                             </button>
-                        </form>
+                            <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Remove this recurring bill?');">
+                                <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                                <input type="hidden" name="action" value="delete_recurring">
+                                <input type="hidden" name="recurring_id" value="<?= $rec['id'] ?>">
+                                <button type="submit" class="btn-table-action delete" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; endif; ?>
@@ -366,7 +433,10 @@ include __DIR__ . '/../includes/header.php';
 </div>
 
 <script>
+const EXPENSE_CATEGORIES = <?= json_encode(array_column($categories, 'name')) ?>;
+
 function openAddExpenseModal() {
+    const categoryOptions = EXPENSE_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
     const html = `
         <form method="POST" action="">
             <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
@@ -392,9 +462,7 @@ function openAddExpenseModal() {
                 <div class="form-group-custom">
                     <label>Category</label>
                     <select name="category">
-                        <?php foreach ($categories as $cat): ?>
-                        <option value="<?= e($cat['name']) ?>"><?= e($cat['name']) ?></option>
-                        <?php endforeach; ?>
+                        ${categoryOptions}
                     </select>
                 </div>
                 <div class="form-group-custom">
@@ -424,6 +492,67 @@ function openAddExpenseModal() {
         </form>
     `;
     window.openModal('Add New Expense', html);
+}
+
+function openEditExpenseModal(exp) {
+    if (!exp) return;
+    const catOptions = EXPENSE_CATEGORIES.map(c => `<option value="${c}" ${exp.category === c ? 'selected' : ''}>${c}</option>`).join('');
+    const paymentMethods = ['upi', 'cash', 'bank', 'card'];
+    const payOptions = paymentMethods.map(p => `<option value="${p}" ${exp.payment_method === p ? 'selected' : ''}>${p.toUpperCase()}</option>`).join('');
+
+    const html = `
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="action" value="edit_expense">
+            <input type="hidden" name="expense_id" value="${exp.id}">
+            
+            <div class="form-group-custom">
+                <label>Title *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-tag"></i>
+                    <input type="text" name="title" value="${exp.title || ''}" required>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Amount (₹) *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-rupee-sign"></i>
+                    <input type="number" step="0.01" min="0.01" name="amount" value="${exp.amount}" required>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group-custom">
+                    <label>Category</label>
+                    <select name="category">
+                        ${catOptions}
+                    </select>
+                </div>
+                <div class="form-group-custom">
+                    <label>Payment Method</label>
+                    <select name="payment_method">
+                        ${payOptions}
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Expense Date *</label>
+                <input type="date" name="expense_date" value="${exp.expense_date}" required>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Notes (optional)</label>
+                <textarea name="notes" rows="2">${exp.notes || ''}</textarea>
+            </div>
+            
+            <button type="submit" class="btn-primary-custom btn-full" style="margin-top: 0.5rem;">
+                <i class="fas fa-save"></i> Update Expense
+            </button>
+        </form>
+    `;
+    window.openModal('Edit Expense', html);
 }
 
 function openAddRecurringModal() {
@@ -486,6 +615,68 @@ function openAddRecurringModal() {
         </form>
     `;
     window.openModal('Add Recurring Bill', html);
+}
+
+function openEditRecurringModal(rec) {
+    if (!rec) return;
+    const cats = ['Bills', 'Subscriptions', 'Rent', 'Health', 'Other'];
+    const catOptions = cats.map(c => `<option value="${c}" ${rec.category === c ? 'selected' : ''}>${c}</option>`).join('');
+    const freqs = ['monthly', 'quarterly', 'yearly', 'weekly'];
+    const freqOptions = freqs.map(f => `<option value="${f}" ${rec.frequency === f ? 'selected' : ''}>${f.charAt(0).toUpperCase() + f.slice(1)}</option>`).join('');
+
+    const html = `
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="action" value="edit_recurring">
+            <input type="hidden" name="recurring_id" value="${rec.id}">
+            
+            <div class="form-group-custom">
+                <label>Bill Name *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-redo"></i>
+                    <input type="text" name="name" value="${rec.name || ''}" required>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Amount (₹) *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-rupee-sign"></i>
+                    <input type="number" step="0.01" min="0.01" name="amount" value="${rec.amount}" required>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group-custom">
+                    <label>Category</label>
+                    <select name="category">
+                        ${catOptions}
+                    </select>
+                </div>
+                <div class="form-group-custom">
+                    <label>Frequency</label>
+                    <select name="frequency">
+                        ${freqOptions}
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Start Date *</label>
+                <input type="date" name="start_date" value="${rec.start_date}" required>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Notes (optional)</label>
+                <textarea name="notes" rows="2">${rec.notes || ''}</textarea>
+            </div>
+            
+            <button type="submit" class="btn-primary-custom btn-full" style="margin-top: 0.5rem;">
+                <i class="fas fa-save"></i> Update Recurring Bill
+            </button>
+        </form>
+    `;
+    window.openModal('Edit Recurring Bill', html);
 }
 </script>
 

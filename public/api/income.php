@@ -38,6 +38,39 @@ if ($method === 'GET') {
         $stmt = $db->prepare('DELETE FROM income WHERE id = ? AND user_id = ?');
         $stmt->execute([$id, $userId]);
         jsonResponse(['success' => true, 'message' => 'Income record removed.']);
+    } elseif ($action === 'edit') {
+        $id = (int)($input['id'] ?? 0);
+        $type = sanitize($input['income_type'] ?? 'freelance');
+        $amount = (float)($input['amount'] ?? 0);
+        $incomeDate = sanitize($input['income_date'] ?? date('Y-m-d'));
+        $description = sanitize($input['description'] ?? '');
+
+        if ($id <= 0 || $amount <= 0 || !isValidDate($incomeDate)) {
+            jsonResponse(['success' => false, 'message' => 'Invalid income parameters'], 422);
+        }
+
+        $stmt = $db->prepare('SELECT income_date FROM income WHERE id = ? AND user_id = ?');
+        $stmt->execute([$id, $userId]);
+        $oldInc = $stmt->fetch();
+
+        if (!$oldInc) {
+            jsonResponse(['success' => false, 'message' => 'Income record not found'], 404);
+        }
+
+        $stmt = $db->prepare(
+            'UPDATE income SET income_type = ?, amount = ?, income_date = ?, description = ? WHERE id = ? AND user_id = ?'
+        );
+        $stmt->execute([$type, $amount, $incomeDate, $description, $id, $userId]);
+
+        $oldM = (int)date('n', strtotime($oldInc['income_date']));
+        $oldY = (int)date('Y', strtotime($oldInc['income_date']));
+        generateMonthlyFinancialRecord($userId, $oldY, $oldM);
+
+        $newM = (int)date('n', strtotime($incomeDate));
+        $newY = (int)date('Y', strtotime($incomeDate));
+        generateMonthlyFinancialRecord($userId, $newY, $newM);
+
+        jsonResponse(['success' => true, 'message' => 'Income updated successfully']);
     } else {
         $type = sanitize($input['income_type'] ?? 'freelance');
         $amount = (float)($input['amount'] ?? 0);

@@ -54,12 +54,44 @@ if ($method === 'GET') {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)'
         );
         $stmt->execute([$userId, $name, $principal, $rate, $tenure, $startDate, $emiData['emi'], $emiData['total_interest'], $emiData['total_payable'], $notes]);
+        generateMonthlyFinancialRecord($userId, (int)date('Y'), (int)date('n'));
         jsonResponse(['success' => true, 'message' => 'Loan added']);
+
+    } elseif ($action === 'edit_loan') {
+        $loanId = (int)($input['loan_id'] ?? 0);
+        $name = sanitize($input['loan_name'] ?? '');
+        $principal = (float)($input['principal'] ?? 0);
+        $rate = (float)($input['annual_interest_rate'] ?? 0);
+        $tenure = (int)($input['tenure_months'] ?? 0);
+        $startDate = sanitize($input['start_date'] ?? date('Y-m-d'));
+        $active = isset($input['active']) ? (int)$input['active'] : 1;
+        $notes = sanitize($input['notes'] ?? '');
+
+        if ($loanId <= 0 || empty($name) || $principal <= 0 || $tenure <= 0 || !isValidDate($startDate)) {
+            jsonResponse(['success' => false, 'message' => 'Invalid loan parameters'], 422);
+        }
+
+        $emiData = calculateEMI($principal, $rate, $tenure);
+        $stmt = $db->prepare(
+            'UPDATE loans SET 
+             loan_name = ?, principal = ?, annual_interest_rate = ?, tenure_months = ?, 
+             start_date = ?, emi_amount = ?, total_interest = ?, total_payable = ?, active = ?, notes = ? 
+             WHERE id = ? AND user_id = ?'
+        );
+        $stmt->execute([
+            $name, $principal, $rate, $tenure, $startDate, 
+            $emiData['emi'], $emiData['total_interest'], $emiData['total_payable'], 
+            $active, $notes, $loanId, $userId
+        ]);
+
+        generateMonthlyFinancialRecord($userId, (int)date('Y'), (int)date('n'));
+        jsonResponse(['success' => true, 'message' => 'Loan updated']);
 
     } elseif ($action === 'delete_loan') {
         $loanId = (int)($input['loan_id'] ?? 0);
         $stmt = $db->prepare('DELETE FROM loans WHERE id = ? AND user_id = ?');
         $stmt->execute([$loanId, $userId]);
+        generateMonthlyFinancialRecord($userId, (int)date('Y'), (int)date('n'));
         jsonResponse(['success' => true, 'message' => 'Loan removed']);
     } else {
         jsonResponse(['success' => false, 'message' => 'Unknown action'], 400);

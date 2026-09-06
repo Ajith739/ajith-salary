@@ -24,7 +24,7 @@ $month = (int)($_GET['month'] ?? date('n'));
 $calData = getCalendarData($year, $month, $settings);
 $workingDays = getWorkingDays($year, $month, $settings);
 
-// Expenses for days
+// Expenses for days (totals)
 $stmt = $db->prepare(
     'SELECT DATE(expense_date) as exp_date, SUM(amount) as total 
      FROM expenses 
@@ -34,12 +34,27 @@ $stmt = $db->prepare(
 $stmt->execute([$userId, $year, $month]);
 $expenses = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
+// Itemized expenses by day
+$stmt = $db->prepare(
+    'SELECT * FROM expenses 
+     WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ? 
+     ORDER BY expense_date ASC, created_at ASC'
+);
+$stmt->execute([$userId, $year, $month]);
+$allExp = $stmt->fetchAll();
+$expensesByDayItems = [];
+foreach ($allExp as $e) {
+    $d = date('Y-m-d', strtotime($e['expense_date']));
+    $expensesByDayItems[$d][] = $e;
+}
+
 jsonResponse([
     'success' => true,
     'data' => [
         'calendar' => $calData,
         'working_days' => $workingDays,
-        'daily_travel' => (float)$settings['daily_travel_cost'],
-        'expenses_by_day' => $expenses
+        'daily_travel' => (float)($settings['daily_travel_cost'] ?? 40),
+        'expenses_by_day' => $expenses,
+        'expenses_by_day_items' => $expensesByDayItems
     ]
 ]);

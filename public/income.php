@@ -50,6 +50,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $successMsg = 'Income of ' . formatINR($amount) . ' added successfully!';
             }
+        } elseif ($action === 'edit_income') {
+            $incomeId = (int)($_POST['income_id'] ?? 0);
+            $type = sanitize($_POST['income_type'] ?? 'freelance');
+            $amount = (float)($_POST['amount'] ?? 0);
+            $incomeDate = sanitize($_POST['income_date'] ?? date('Y-m-d'));
+            $desc = sanitize($_POST['description'] ?? '');
+            
+            if ($incomeId <= 0 || $amount <= 0 || !isValidDate($incomeDate)) {
+                $errorMsg = 'Please enter a valid amount and date.';
+            } else {
+                $stmt = $db->prepare('SELECT income_date FROM income WHERE id = ? AND user_id = ?');
+                $stmt->execute([$incomeId, $userId]);
+                $oldInc = $stmt->fetch();
+                
+                if ($oldInc) {
+                    $stmt = $db->prepare(
+                        'UPDATE income SET income_type = ?, amount = ?, income_date = ?, description = ? WHERE id = ? AND user_id = ?'
+                    );
+                    $stmt->execute([$type, $amount, $incomeDate, $desc, $incomeId, $userId]);
+                    
+                    $oldM = (int)date('n', strtotime($oldInc['income_date']));
+                    $oldY = (int)date('Y', strtotime($oldInc['income_date']));
+                    generateMonthlyFinancialRecord($userId, $oldY, $oldM);
+                    
+                    $newM = (int)date('n', strtotime($incomeDate));
+                    $newY = (int)date('Y', strtotime($incomeDate));
+                    generateMonthlyFinancialRecord($userId, $newY, $newM);
+                    
+                    $successMsg = 'Income entry updated successfully!';
+                } else {
+                    $errorMsg = 'Income record not found.';
+                }
+            }
+        } elseif ($action === 'edit_salary') {
+            $newSalary = (float)($_POST['salary'] ?? 0);
+            $newSalaryDate = (int)($_POST['salary_date'] ?? 1);
+            if ($newSalary <= 0 || $newSalaryDate < 1 || $newSalaryDate > 31) {
+                $errorMsg = 'Please enter a valid salary amount and credit date (1-31).';
+            } else {
+                $stmt = $db->prepare('UPDATE financial_settings SET salary = ?, salary_date = ? WHERE user_id = ?');
+                $stmt->execute([$newSalary, $newSalaryDate, $userId]);
+                $settings['salary'] = $newSalary;
+                $settings['salary_date'] = $newSalaryDate;
+                generateMonthlyFinancialRecord($userId, $year, $month);
+                $successMsg = 'Base monthly salary updated to ' . formatINR($newSalary) . '!';
+            }
         } elseif ($action === 'delete_income') {
             $incomeId = (int)($_POST['income_id'] ?? 0);
             $stmt = $db->prepare('SELECT income_date FROM income WHERE id = ? AND user_id = ?');
@@ -179,9 +225,14 @@ include __DIR__ . '/../includes/header.php';
 
 <!-- ─── SALARY DETAILS CARD ─── -->
 <div class="breakdown-card" data-animate style="margin-bottom: 1.75rem;">
-    <div class="chart-header">
+    <div class="chart-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h3><i class="fas fa-briefcase"></i> Primary Employment Income Details</h3>
-        <span class="badge-custom status-completed" style="font-size: 0.8rem; padding: 0.3rem 0.75rem;">Active</span>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="btn-secondary-custom btn-sm-custom" onclick="openEditSalaryModal(<?= (float)$salary ?>, <?= (int)$settings['salary_date'] ?>)">
+                <i class="fas fa-edit"></i> Edit Salary
+            </button>
+            <span class="badge-custom status-completed" style="font-size: 0.8rem; padding: 0.3rem 0.75rem;">Active</span>
+        </div>
     </div>
     <div class="breakdown-body">
         <div class="breakdown-row">
@@ -215,8 +266,8 @@ include __DIR__ . '/../includes/header.php';
                     <th>Date</th>
                     <th>Source / Type</th>
                     <th>Description</th>
-                    <th>Amount</th>
-                    <th style="text-align: right;">Action</th>
+                    <th class="text-right">Amount</th>
+                    <th class="text-right">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -235,18 +286,23 @@ include __DIR__ . '/../includes/header.php';
                         </span>
                     </td>
                     <td style="color: var(--text-secondary);"><?= e($inc['description'] ?: '—') ?></td>
-                    <td style="font-weight: 700; color: var(--success); font-size: 1rem;">
+                    <td class="text-right" style="font-weight: 700; color: var(--success); font-size: 1rem;">
                         +<?= formatINR((float)$inc['amount']) ?>
                     </td>
-                    <td style="text-align: right;">
-                        <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Delete this income entry?');">
-                            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
-                            <input type="hidden" name="action" value="delete_income">
-                            <input type="hidden" name="income_id" value="<?= $inc['id'] ?>">
-                            <button type="submit" class="btn-table-action delete" title="Delete Income">
-                                <i class="fas fa-trash"></i>
+                    <td class="text-right">
+                        <div class="table-actions justify-end">
+                            <button type="button" class="btn-table-action edit" title="Edit Income" onclick='openEditIncomeModal(<?= htmlspecialchars(json_encode($inc), ENT_QUOTES, "UTF-8") ?>)'>
+                                <i class="fas fa-edit"></i>
                             </button>
-                        </form>
+                            <form method="POST" action="" style="display: inline;" onsubmit="return confirm('Delete this income entry?');">
+                                <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                                <input type="hidden" name="action" value="delete_income">
+                                <input type="hidden" name="income_id" value="<?= $inc['id'] ?>">
+                                <button type="submit" class="btn-table-action delete" title="Delete Income">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; endif; ?>
@@ -298,6 +354,77 @@ function openAddIncomeModal() {
         </form>
     `;
     window.openModal('Add Additional Income', html);
+}
+
+function openEditIncomeModal(inc) {
+    if (!inc) return;
+    const types = ['freelance', 'bonus', 'interest', 'refund', 'gift', 'other'];
+    const typeOptions = types.map(t => `<option value="${t}" ${inc.income_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('');
+
+    const html = `
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="action" value="edit_income">
+            <input type="hidden" name="income_id" value="${inc.id}">
+            
+            <div class="form-group-custom">
+                <label>Income Source / Type *</label>
+                <select name="income_type" required>
+                    ${typeOptions}
+                </select>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Amount (₹) *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-rupee-sign"></i>
+                    <input type="number" step="0.01" min="0.01" name="amount" value="${inc.amount}" required>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Date Received *</label>
+                <input type="date" name="income_date" value="${inc.income_date}" required>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Description / Notes</label>
+                <textarea name="description" rows="2">${inc.description || ''}</textarea>
+            </div>
+            
+            <button type="submit" class="btn-primary-custom btn-full" style="margin-top: 0.5rem;">
+                <i class="fas fa-save"></i> Update Income
+            </button>
+        </form>
+    `;
+    window.openModal('Edit Income Entry', html);
+}
+
+function openEditSalaryModal(currentSalary, currentSalaryDate) {
+    const html = `
+        <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+            <input type="hidden" name="action" value="edit_salary">
+            
+            <div class="form-group-custom">
+                <label>Base Monthly Take-Home Salary (₹) *</label>
+                <div class="input-icon-wrap">
+                    <i class="fas fa-rupee-sign"></i>
+                    <input type="number" step="0.01" min="1" name="salary" value="${currentSalary}" required>
+                </div>
+            </div>
+            
+            <div class="form-group-custom">
+                <label>Expected Credit Day (1 - 31) *</label>
+                <input type="number" min="1" max="31" name="salary_date" value="${currentSalaryDate}" required>
+            </div>
+            
+            <button type="submit" class="btn-primary-custom btn-full" style="margin-top: 0.5rem;">
+                <i class="fas fa-save"></i> Save Salary Settings
+            </button>
+        </form>
+    `;
+    window.openModal('Edit Primary Salary', html);
 }
 </script>
 
