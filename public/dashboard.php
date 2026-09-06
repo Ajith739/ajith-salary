@@ -3,9 +3,57 @@
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 
-session_start();
+echo "1. Dashboard reached<br>";
+flush();
 
-echo "Dashboard reached<br>";
+require_once __DIR__ . '/../includes/auth.php';
+echo "2. auth.php loaded<br>";
+flush();
+
+require_once __DIR__ . '/../includes/csrf.php';
+echo "3. csrf.php loaded<br>";
+flush();
+
+require_once __DIR__ . '/../includes/functions.php';
+echo "4. functions.php loaded<br>";
+flush();
+
+require_once __DIR__ . '/../includes/finance.php';
+echo "5. finance.php loaded<br>";
+flush();
+
+startSecureSession();
+echo "6. Session started<br>";
+flush();
+
+requireAuth();
+echo "7. Authentication passed<br>";
+flush();
+
+$userId = getCurrentUserId();
+echo "8. User ID: " . (int)$userId . "<br>";
+flush();
+
+$settings = getUserSettings($userId);
+echo "9. Settings loaded<br>";
+flush();
+
+$db = getDB();
+echo "10. Database loaded<br>";
+flush();
+
+$year = (int)($_GET['year'] ?? date('Y'));
+$month = (int)($_GET['month'] ?? date('n'));
+
+echo "11. Date: {$year}-{$month}<br>";
+flush();
+
+$monthly = generateMonthlyFinancialRecord($userId, $year, $month);
+echo "12. Monthly record generated<br>";
+flush();
+
+echo "<h2>ALL BASIC TESTS PASSED</h2>";
+exit;
 /**
  * DASHBOARD — Main Financial Overview
  */
