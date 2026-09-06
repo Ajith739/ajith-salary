@@ -27,10 +27,18 @@ function generateMonthlyFinancialRecord(int $userId, int $year, int $month): arr
     
     // Additional income for this month
     $stmt = $db->prepare(
-        'SELECT COALESCE(SUM(amount), 0) AS total FROM income 
-         WHERE user_id = ? AND YEAR(income_date) = ? AND MONTH(income_date) = ? AND income_type != "salary"'
-    );
-    $stmt->execute([$userId, $year, $month]);
+    'SELECT COALESCE(SUM(ft.amount), 0) AS total
+     FROM friend_transactions ft
+     INNER JOIN friends f ON f.id = ft.friend_id
+     WHERE f.user_id = ?
+       AND ft.type = "given"
+       AND YEAR(ft.transaction_date) = ?
+       AND MONTH(ft.transaction_date) = ?'
+);
+
+$stmt->execute([$userId, $year, $month]);
+
+$friendMoney = (float)$stmt->fetchColumn();
     $additionalIncome = (float)$stmt->fetchColumn();
     
     $totalIncome = $salary + $additionalIncome;
