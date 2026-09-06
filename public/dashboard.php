@@ -18,11 +18,120 @@ $settings = getUserSettings($userId);
 $db = getDB();
 
 // Current period
+$view = $_GET['view'] ?? (isset($_GET['year']) && !isset($_GET['month']) ? 'year' : 'month');
+$isYearView = ($view === 'year');
 $year = (int)($_GET['year'] ?? date('Y'));
 $month = (int)($_GET['month'] ?? date('n'));
 
-// Generate/update monthly record
-$monthly = generateMonthlyFinancialRecord($userId, $year, $month);
+if ($isYearView) {
+    // Generate/sync monthly records for all months of the year
+    $maxM = ($year == (int)date('Y')) ? (int)date('n') : 12;
+    for ($m = 1; $m <= $maxM; $m++) {
+        generateMonthlyFinancialRecord($userId, $year, $m);
+    }
+    
+    // Aggregated annual stats from monthly_financials
+    $stmt = $db->prepare(
+        'SELECT 
+            SUM(salary) as salary,
+            SUM(additional_income) as additional_income,
+            SUM(total_income) as total_income,
+            SUM(travel_expense) as travel_expense,
+            SUM(recharge_expense) as recharge_expense,
+            SUM(recurring_expense) as recurring_expense,
+            SUM(personal_expense) as personal_expense,
+            SUM(friend_money) as friend_money,
+            SUM(emi_total) as emi_total,
+            SUM(total_expenses) as total_expenses,
+            SUM(savings) as savings,
+            SUM(working_days) as working_days
+         FROM monthly_financials WHERE user_id = ? AND year = ?'
+    );
+    $stmt->execute([$userId, $year]);
+    $yearRow = $stmt->fetch();
+    
+    $totalInc = (float)($yearRow['total_income'] ?? 0);
+    $totalExp = (float)($yearRow['total_expenses'] ?? 0);
+    $totalSav = (float)($yearRow['savings'] ?? 0);
+    $savingsRate = $totalInc > 0 ? round(($totalSav / $totalInc) * 100, 1) : 0;
+    
+    $displayMonthly = [
+        'salary' => (float)($yearRow['salary'] ?? 0),
+        'additional_income' => (float)($yearRow['additional_income'] ?? 0),
+        'total_income' => $totalInc,
+        'travel_expense' => (float)($yearRow['travel_expense'] ?? 0),
+        'recharge_expense' => (float)($yearRow['recharge_expense'] ?? 0),
+        'recurring_expense' => (float)($yearRow['recurring_expense'] ?? 0),
+        'personal_expense' => (float)($yearRow['personal_expense'] ?? 0),
+        'friend_money' => (float)($yearRow['friend_money'] ?? 0),
+        'emi_total' => (float)($yearRow['emi_total'] ?? 0),
+        'total_expenses' => $totalExp,
+        'savings' => $totalSav,
+        'savings_rate' => $savingsRate,
+        'working_days' => (int)($yearRow['working_days'] ?? 0),
+    ];
+    $monthly = $displayMonthly;
+
+    // Monthly data for all 12 months in this year
+    $chartData = [];
+    for ($m = 1; $m <= 12; $m++) {
+        $stmt = $db->prepare(
+            'SELECT * FROM monthly_financials WHERE user_id = ? AND year = ? AND month = ?'
+        );
+        $stmt->execute([$userId, $year, $m]);
+        $mf = $stmt->fetch();
+        $chartData[] = [
+            'label' => getShortMonthName($m),
+            'income' => (float)($mf['total_income'] ?? 0),
+            'expenses' => (float)($mf['total_expenses'] ?? 0),
+            'savings' => (float)($mf['savings'] ?? 0)
+        ];
+    }
+
+    // Expense categories for the entire year
+    $stmt = $db->prepare(
+        'SELECT category, SUM(amount) as total FROM expenses 
+         WHERE user_id = ? AND YEAR(expense_date) = ?
+         GROUP BY category ORDER BY total DESC'
+    );
+    $stmt->execute([$userId, $year]);
+    $expenseCategories = $stmt->fetchAll();
+
+} else {
+    // Generate/update monthly record for the selected month
+    $monthly = generateMonthlyFinancialRecord($userId, $year, $month);
+    $displayMonthly = $monthly;
+
+    // Monthly data for charts (last 6 months)
+    $chartData = [];
+    for ($i = 5; $i >= 0; $i--) {
+        $cm = $month - $i;
+        $cy = $year;
+        while ($cm < 1) { $cm += 12; $cy--; }
+        
+        $stmt = $db->prepare(
+            'SELECT * FROM monthly_financials WHERE user_id = ? AND year = ? AND month = ?'
+        );
+        $stmt->execute([$userId, $cy, $cm]);
+        $mf = $stmt->fetch();
+        
+        $chartData[] = [
+            'label' => getShortMonthName($cm) . ' ' . $cy,
+            'income' => (float)($mf['total_income'] ?? 0),
+            'expenses' => (float)($mf['total_expenses'] ?? 0),
+            'savings' => (float)($mf['savings'] ?? 0)
+        ];
+    }
+
+    // Expense categories for current month
+    $stmt = $db->prepare(
+        'SELECT category, SUM(amount) as total FROM expenses 
+         WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ?
+         GROUP BY category ORDER BY total DESC'
+    );
+    $stmt->execute([$userId, $year, $month]);
+    $expenseCategories = $stmt->fetchAll();
+}
 
 // Financial health
 $health = calculateFinancialHealth($userId);
@@ -43,46 +152,16 @@ $stmt = $db->prepare(
 $stmt->execute([$userId]);
 $recentExpenses = $stmt->fetchAll();
 
-// Monthly data for charts (last 6 months)
-$chartData = [];
-for ($i = 5; $i >= 0; $i--) {
-    $cm = $month - $i;
-    $cy = $year;
-    while ($cm < 1) { $cm += 12; $cy--; }
-    
-    $stmt = $db->prepare(
-        'SELECT * FROM monthly_financials WHERE user_id = ? AND year = ? AND month = ?'
-    );
-    $stmt->execute([$userId, $cy, $cm]);
-    $mf = $stmt->fetch();
-    
-    $chartData[] = [
-        'label' => getShortMonthName($cm) . ' ' . $cy,
-        'income' => (float)($mf['total_income'] ?? 0),
-        'expenses' => (float)($mf['total_expenses'] ?? 0),
-        'savings' => (float)($mf['savings'] ?? 0)
-    ];
-}
-
-// Expense categories for current month
-$stmt = $db->prepare(
-    'SELECT category, SUM(amount) as total FROM expenses 
-     WHERE user_id = ? AND YEAR(expense_date) = ? AND MONTH(expense_date) = ?
-     GROUP BY category ORDER BY total DESC'
-);
-$stmt->execute([$userId, $year, $month]);
-$expenseCategories = $stmt->fetchAll();
-
 // Add travel as a category for the chart
 $expenseCatChart = $expenseCategories;
-if ($monthly['travel_expense'] > 0) {
-    array_unshift($expenseCatChart, ['category' => 'Travel', 'total' => $monthly['travel_expense']]);
+if ($displayMonthly['travel_expense'] > 0) {
+    array_unshift($expenseCatChart, ['category' => 'Travel', 'total' => $displayMonthly['travel_expense']]);
 }
-if ($monthly['recharge_expense'] > 0) {
-    $expenseCatChart[] = ['category' => 'Recharge', 'total' => $monthly['recharge_expense']];
+if ($displayMonthly['recharge_expense'] > 0) {
+    $expenseCatChart[] = ['category' => 'Recharge', 'total' => $displayMonthly['recharge_expense']];
 }
-if ($monthly['emi_total'] > 0) {
-    $expenseCatChart[] = ['category' => 'EMI', 'total' => $monthly['emi_total']];
+if ($displayMonthly['emi_total'] > 0) {
+    $expenseCatChart[] = ['category' => 'EMI', 'total' => $displayMonthly['emi_total']];
 }
 
 // Recharge info
@@ -107,22 +186,34 @@ include __DIR__ . '/../includes/header.php';
 <!-- ─── PERIOD SELECTOR ─── -->
 <div class="period-selector" id="periodSelector">
     <div class="period-tabs">
-        <a href="?year=<?= date('Y') ?>&month=<?= date('n') ?>" 
-           class="period-tab <?= ($year == date('Y') && $month == date('n')) ? 'active' : '' ?>">
+        <a href="?view=month&year=<?= date('Y') ?>&month=<?= date('n') ?>" 
+           class="period-tab <?= !$isYearView ? 'active' : '' ?>">
             This Month
         </a>
-        <a href="?year=<?= date('Y') ?>" class="period-tab">This Year</a>
+        <a href="?view=year&year=<?= $year ?>" class="period-tab <?= $isYearView ? 'active' : '' ?>">This Year</a>
     </div>
     <div class="period-controls">
-        <a href="?year=<?= $month == 1 ? $year-1 : $year ?>&month=<?= $month == 1 ? 12 : $month-1 ?>" 
+        <?php if ($isYearView): ?>
+        <a href="?view=year&year=<?= $year - 1 ?>" 
+           class="btn-icon" title="Previous year">
+            <i class="fas fa-chevron-left"></i>
+        </a>
+        <span class="period-current">Year <?= $year ?></span>
+        <a href="?view=year&year=<?= $year + 1 ?>"
+           class="btn-icon" title="Next year">
+            <i class="fas fa-chevron-right"></i>
+        </a>
+        <?php else: ?>
+        <a href="?view=month&year=<?= $month == 1 ? $year-1 : $year ?>&month=<?= $month == 1 ? 12 : $month-1 ?>" 
            class="btn-icon" title="Previous month">
             <i class="fas fa-chevron-left"></i>
         </a>
         <span class="period-current"><?= getMonthName($month) ?> <?= $year ?></span>
-        <a href="?year=<?= $month == 12 ? $year+1 : $year ?>&month=<?= $month == 12 ? 1 : $month+1 ?>"
+        <a href="?view=month&year=<?= $month == 12 ? $year+1 : $year ?>&month=<?= $month == 12 ? 1 : $month+1 ?>"
            class="btn-icon" title="Next month">
             <i class="fas fa-chevron-right"></i>
         </a>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -146,27 +237,27 @@ include __DIR__ . '/../includes/header.php';
     <div class="stat-card stat-income" data-animate>
         <div class="stat-icon"><i class="fas fa-wallet"></i></div>
         <div class="stat-content">
-            <div class="stat-label">Monthly Salary</div>
-            <div class="stat-value" data-count="<?= $monthly['salary'] ?>"><?= formatINR($monthly['salary']) ?></div>
-            <div class="stat-meta"><?= $monthly['working_days'] ?> working days</div>
+            <div class="stat-label"><?= $isYearView ? 'Annual Salary' : 'Monthly Salary' ?></div>
+            <div class="stat-value" data-count="<?= $displayMonthly['salary'] ?>"><?= formatINR($displayMonthly['salary']) ?></div>
+            <div class="stat-meta"><?= $displayMonthly['working_days'] ?> <?= $isYearView ? 'total working days' : 'working days' ?></div>
         </div>
     </div>
     
     <div class="stat-card stat-expense" data-animate>
         <div class="stat-icon"><i class="fas fa-receipt"></i></div>
         <div class="stat-content">
-            <div class="stat-label">Total Expenses</div>
-            <div class="stat-value" data-count="<?= $monthly['total_expenses'] ?>"><?= formatINR($monthly['total_expenses']) ?></div>
-            <div class="stat-meta"><?= round(calcPercentage($monthly['total_expenses'], $monthly['total_income'])) ?>% of income</div>
+            <div class="stat-label"><?= $isYearView ? 'Annual Expenses' : 'Total Expenses' ?></div>
+            <div class="stat-value" data-count="<?= $displayMonthly['total_expenses'] ?>"><?= formatINR($displayMonthly['total_expenses']) ?></div>
+            <div class="stat-meta"><?= round(calcPercentage($displayMonthly['total_expenses'], $displayMonthly['total_income'])) ?>% of income</div>
         </div>
     </div>
     
     <div class="stat-card stat-savings" data-animate>
         <div class="stat-icon"><i class="fas fa-piggy-bank"></i></div>
         <div class="stat-content">
-            <div class="stat-label">Monthly Savings</div>
-            <div class="stat-value" data-count="<?= $monthly['savings'] ?>"><?= formatINR($monthly['savings']) ?></div>
-            <div class="stat-meta savings-rate"><?= $monthly['savings_rate'] ?>% savings rate</div>
+            <div class="stat-label"><?= $isYearView ? 'Annual Savings' : 'Monthly Savings' ?></div>
+            <div class="stat-value" data-count="<?= $displayMonthly['savings'] ?>"><?= formatINR($displayMonthly['savings']) ?></div>
+            <div class="stat-meta savings-rate"><?= $displayMonthly['savings_rate'] ?>% savings rate</div>
         </div>
     </div>
     
@@ -191,8 +282,8 @@ include __DIR__ . '/../includes/header.php';
     <div class="stat-card stat-emi" data-animate>
         <div class="stat-icon"><i class="fas fa-credit-card"></i></div>
         <div class="stat-content">
-            <div class="stat-label">EMI Total</div>
-            <div class="stat-value" data-count="<?= $monthly['emi_total'] ?>"><?= formatINR($monthly['emi_total']) ?></div>
+            <div class="stat-label"><?= $isYearView ? 'Annual EMI Total' : 'EMI Total' ?></div>
+            <div class="stat-value" data-count="<?= $displayMonthly['emi_total'] ?>"><?= formatINR($displayMonthly['emi_total']) ?></div>
             <div class="stat-meta"><?= count($activeLoans) ?> active loan(s)</div>
         </div>
     </div>
@@ -243,7 +334,7 @@ include __DIR__ . '/../includes/header.php';
     <!-- Cash Flow Chart -->
     <div class="chart-card" data-animate>
         <div class="chart-header">
-            <h3><i class="fas fa-chart-area"></i> Cash Flow</h3>
+            <h3><i class="fas fa-chart-area"></i> <?= $isYearView ? 'Annual Cash Flow (' . $year . ')' : 'Cash Flow' ?></h3>
         </div>
         <div class="chart-body">
             <canvas id="cashFlowChart" height="280"></canvas>
@@ -253,7 +344,7 @@ include __DIR__ . '/../includes/header.php';
     <!-- Expense Breakdown -->
     <div class="chart-card" data-animate>
         <div class="chart-header">
-            <h3><i class="fas fa-chart-pie"></i> Expense Breakdown</h3>
+            <h3><i class="fas fa-chart-pie"></i> <?= $isYearView ? 'Annual Expense Breakdown (' . $year . ')' : 'Expense Breakdown' ?></h3>
         </div>
         <div class="chart-body">
             <canvas id="expenseDonutChart" height="280"></canvas>
@@ -261,49 +352,49 @@ include __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
-<!-- ─── MONTHLY BREAKDOWN ─── -->
+<!-- ─── MONTHLY / ANNUAL BREAKDOWN ─── -->
 <div class="breakdown-card" data-animate>
     <div class="chart-header">
-        <h3><i class="fas fa-list-alt"></i> Monthly Breakdown — <?= getMonthName($month) ?> <?= $year ?></h3>
+        <h3><i class="fas fa-list-alt"></i> <?= $isYearView ? 'Annual Breakdown — ' . $year : 'Monthly Breakdown — ' . getMonthName($month) . ' ' . $year ?></h3>
     </div>
     <div class="breakdown-body">
         <div class="breakdown-row">
-            <span class="bk-label"><i class="fas fa-arrow-down text-success"></i> Salary</span>
-            <span class="bk-value text-success"><?= formatINR($monthly['salary']) ?></span>
+            <span class="bk-label"><i class="fas fa-arrow-down text-success"></i> <?= $isYearView ? 'Annual Salary' : 'Salary' ?></span>
+            <span class="bk-value text-success"><?= formatINR($displayMonthly['salary']) ?></span>
         </div>
         <div class="breakdown-row">
             <span class="bk-label"><i class="fas fa-plus text-info"></i> Additional Income</span>
-            <span class="bk-value text-info"><?= formatINR($monthly['additional_income']) ?></span>
+            <span class="bk-value text-info"><?= formatINR($displayMonthly['additional_income']) ?></span>
         </div>
         <div class="breakdown-divider"></div>
         <div class="breakdown-row">
-            <span class="bk-label"><i class="fas fa-bus text-warning"></i> Travel (<?= $monthly['working_days'] ?> days × <?= formatINR((float)$settings['daily_travel_cost']) ?>)</span>
-            <span class="bk-value text-danger">-<?= formatINR($monthly['travel_expense']) ?></span>
+            <span class="bk-label"><i class="fas fa-bus text-warning"></i> Travel (<?= $displayMonthly['working_days'] ?> days<?= !$isYearView ? ' × ' . formatINR((float)$settings['daily_travel_cost']) : '' ?>)</span>
+            <span class="bk-value text-danger">-<?= formatINR($displayMonthly['travel_expense']) ?></span>
         </div>
         <div class="breakdown-row">
             <span class="bk-label"><i class="fas fa-mobile-alt text-purple"></i> Mobile Recharge</span>
-            <span class="bk-value text-danger">-<?= formatINR($monthly['recharge_expense']) ?></span>
+            <span class="bk-value text-danger">-<?= formatINR($displayMonthly['recharge_expense']) ?></span>
         </div>
         <div class="breakdown-row">
             <span class="bk-label"><i class="fas fa-redo text-info"></i> Recurring Expenses</span>
-            <span class="bk-value text-danger">-<?= formatINR($monthly['recurring_expense']) ?></span>
+            <span class="bk-value text-danger">-<?= formatINR($displayMonthly['recurring_expense']) ?></span>
         </div>
         <div class="breakdown-row">
             <span class="bk-label"><i class="fas fa-shopping-bag text-pink"></i> Personal Spending</span>
-            <span class="bk-value text-danger">-<?= formatINR($monthly['personal_expense']) ?></span>
+            <span class="bk-value text-danger">-<?= formatINR($displayMonthly['personal_expense']) ?></span>
         </div>
         <div class="breakdown-row">
             <span class="bk-label"><i class="fas fa-user-friends text-warning"></i> Money Given to Friends</span>
-            <span class="bk-value text-danger">-<?= formatINR($monthly['friend_money']) ?></span>
+            <span class="bk-value text-danger">-<?= formatINR($displayMonthly['friend_money']) ?></span>
         </div>
         <div class="breakdown-row">
             <span class="bk-label"><i class="fas fa-credit-card text-danger"></i> EMI Payments</span>
-            <span class="bk-value text-danger">-<?= formatINR($monthly['emi_total']) ?></span>
+            <span class="bk-value text-danger">-<?= formatINR($displayMonthly['emi_total']) ?></span>
         </div>
         <div class="breakdown-divider thick"></div>
         <div class="breakdown-row total">
-            <span class="bk-label"><i class="fas fa-piggy-bank text-success"></i> <strong>Estimated Savings</strong></span>
-            <span class="bk-value text-success"><strong><?= formatINR($monthly['savings']) ?></strong></span>
+            <span class="bk-label"><i class="fas fa-piggy-bank text-success"></i> <strong><?= $isYearView ? 'Estimated Annual Savings' : 'Estimated Savings' ?></strong></span>
+            <span class="bk-value text-success"><strong><?= formatINR($displayMonthly['savings']) ?></strong></span>
         </div>
     </div>
 </div>
@@ -439,7 +530,9 @@ window.DASHBOARD_DATA = {
     health: <?= json_encode($health, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
     monthly: <?= json_encode($monthly, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
     year: <?= (int)$year ?>,
-    month: <?= (int)$month ?>
+    month: <?= (int)$month ?>,
+    view: '<?= e($view) ?>',
+    isYearView: <?= $isYearView ? 'true' : 'false' ?>
 };
 </script>
 

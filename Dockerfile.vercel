@@ -6,8 +6,4 @@ COPY . /app
 
 RUN docker-php-ext-install pdo_mysql
 
-ENV SERVER_NAME=:8000
-
-EXPOSE 8000
-
-CMD ["frankenphp", "php-server", "--listen", ":8000", "--root", "/app/public"]
+CMD ["sh", "-c", "frankenphp php-server --listen :${PORT:-80} --root /app/public"]

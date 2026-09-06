@@ -48,15 +48,13 @@
         }
     }
 
-    // Initialize theme from storage if set
-    const savedTheme = localStorage.getItem('myfinance_theme');
-    if (savedTheme) {
-        setTheme(savedTheme);
-    }
+    // Initialize theme from storage or markup attribute (default: light)
+    const savedTheme = localStorage.getItem('myfinance_theme') || document.documentElement.getAttribute('data-theme') || 'light';
+    setTheme(savedTheme);
 
     if (themeToggleBtn) {
         themeToggleBtn.addEventListener('click', () => {
-            const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
             const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
             setTheme(nextTheme);
 

@@ -21,7 +21,7 @@ CREATE TABLE `users` (
   `email` VARCHAR(150) NOT NULL,
   `password_hash` VARCHAR(255) NOT NULL,
   `avatar` VARCHAR(255) DEFAULT NULL,
-  `theme` ENUM('dark','light') DEFAULT 'dark',
+  `theme` ENUM('dark','light') DEFAULT 'light',
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

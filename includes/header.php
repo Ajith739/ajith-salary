@@ -6,7 +6,7 @@ if (!defined('PAGE_TITLE')) define('PAGE_TITLE', 'Dashboard');
 if (!defined('PAGE_ID')) define('PAGE_ID', 'dashboard');
 
 $currentUser = getCurrentUser();
-$userTheme = $_SESSION['user_theme'] ?? 'dark';
+$userTheme = $_SESSION['user_theme'] ?? 'light';
 $csrfToken = generateCSRFToken();
 ?>
 <!DOCTYPE html>
@@ -141,7 +141,7 @@ $csrfToken = generateCSRFToken();
                         <span><?= date('d M Y') ?></span>
                     </div>
                     <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
-                        <i class="fas fa-moon"></i>
+                        <i class="fas fa-<?= $userTheme === 'dark' ? 'moon' : 'sun' ?>"></i>
                     </button>
                 </div>
             </header>
