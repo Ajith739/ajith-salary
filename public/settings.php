@@ -69,11 +69,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$cash, $bank, $upi, $userId]);
             
             // Sync wallet_accounts table
-            $stmt = $db->prepare('UPDATE wallet_accounts SET balance = ? WHERE user_id = ? AND type = "cash"');
+            $stmt = $db->prepare("UPDATE wallet_accounts SET balance = ? WHERE user_id = ? AND type = 'cash'");
             $stmt->execute([$cash, $userId]);
-            $stmt = $db->prepare('UPDATE wallet_accounts SET balance = ? WHERE user_id = ? AND type = "bank"');
+            $stmt = $db->prepare("UPDATE wallet_accounts SET balance = ? WHERE user_id = ? AND type = 'bank'");
             $stmt->execute([$bank, $userId]);
-            $stmt = $db->prepare('UPDATE wallet_accounts SET balance = ? WHERE user_id = ? AND type = "upi"');
+            $stmt = $db->prepare("UPDATE wallet_accounts SET balance = ? WHERE user_id = ? AND type = 'upi'");
             $stmt->execute([$upi, $userId]);
             
             $successMsg = 'Current account balances saved!';

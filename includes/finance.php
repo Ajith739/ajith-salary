@@ -27,18 +27,10 @@ function generateMonthlyFinancialRecord(int $userId, int $year, int $month): arr
     
     // Additional income for this month
     $stmt = $db->prepare(
-    'SELECT COALESCE(SUM(ft.amount), 0) AS total
-     FROM friend_transactions ft
-     INNER JOIN friends f ON f.id = ft.friend_id
-     WHERE f.user_id = ?
-       AND ft.type = "given"
-       AND YEAR(ft.transaction_date) = ?
-       AND MONTH(ft.transaction_date) = ?'
-);
-
-$stmt->execute([$userId, $year, $month]);
-
-$friendMoney = (float)$stmt->fetchColumn();
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM income 
+         WHERE user_id = ? AND YEAR(income_date) = ? AND MONTH(income_date) = ? AND income_type != 'salary'"
+    );
+    $stmt->execute([$userId, $year, $month]);
     $additionalIncome = (float)$stmt->fetchColumn();
     
     $totalIncome = $salary + $additionalIncome;
@@ -59,9 +51,9 @@ $friendMoney = (float)$stmt->fetchColumn();
     
     // Money given to friends this month
     $stmt = $db->prepare(
-        'SELECT COALESCE(SUM(amount), 0) AS total FROM friend_transactions 
-         WHERE user_id = ? AND type = "given" 
-         AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?'
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM friend_transactions 
+         WHERE user_id = ? AND type = 'given' 
+         AND YEAR(transaction_date) = ? AND MONTH(transaction_date) = ?"
     );
     $stmt->execute([$userId, $year, $month]);
     $friendMoney = (float)$stmt->fetchColumn();
@@ -261,9 +253,9 @@ function calculateRecurringExpenses(int $userId, int $year, int $month): float {
 function calculateMonthlyEMI(int $userId, int $year, int $month): float {
     $db = getDB();
     $stmt = $db->prepare(
-        'SELECT SUM(emi_amount) AS total FROM loans 
+        "SELECT SUM(emi_amount) AS total FROM loans 
          WHERE user_id = ? AND active = 1 
-         AND start_date <= LAST_DAY(CONCAT(?, "-", LPAD(?, 2, "0"), "-01"))'
+         AND start_date <= LAST_DAY(CONCAT(?, '-', LPAD(?, 2, '0'), '-01'))"
     );
     $stmt->execute([$userId, $year, $month]);
     return (float)($stmt->fetchColumn() ?: 0);
@@ -409,8 +401,8 @@ function calculateFinancialHealth(int $userId): array {
     
     // 5. Goal Progress (10 points)
     $stmt = $db->prepare(
-        'SELECT COALESCE(SUM(saved_amount), 0) as saved, COALESCE(SUM(target_amount), 0) as target
-         FROM financial_goals WHERE user_id = ? AND status = "active"'
+        "SELECT COALESCE(SUM(saved_amount), 0) as saved, COALESCE(SUM(target_amount), 0) as target
+         FROM financial_goals WHERE user_id = ? AND status = 'active'"
     );
     $stmt->execute([$userId]);
     $goals = $stmt->fetch();
@@ -425,9 +417,9 @@ function calculateFinancialHealth(int $userId): array {
     
     // 6. Outstanding Money (5 points) — less outstanding is better
     $stmt = $db->prepare(
-        'SELECT COALESCE(SUM(CASE WHEN type="given" THEN amount ELSE 0 END), 0) -
-                COALESCE(SUM(CASE WHEN type IN("repaid","received") THEN amount ELSE 0 END), 0) AS outstanding
-         FROM friend_transactions WHERE user_id = ?'
+        "SELECT COALESCE(SUM(CASE WHEN type='given' THEN amount ELSE 0 END), 0) -
+                COALESCE(SUM(CASE WHEN type IN('repaid','received') THEN amount ELSE 0 END), 0) AS outstanding
+         FROM friend_transactions WHERE user_id = ?"
     );
     $stmt->execute([$userId]);
     $outstanding = max(0, (float)$stmt->fetchColumn());
@@ -468,14 +460,14 @@ function getFriendMoneySummary(int $userId): array {
     $db = getDB();
     
     $stmt = $db->prepare(
-        'SELECT f.id, f.name,
-                COALESCE(SUM(CASE WHEN ft.type = "given" THEN ft.amount ELSE 0 END), 0) AS total_given,
-                COALESCE(SUM(CASE WHEN ft.type IN ("repaid","received") THEN ft.amount ELSE 0 END), 0) AS total_repaid
+        "SELECT f.id, f.name,
+                COALESCE(SUM(CASE WHEN ft.type = 'given' THEN ft.amount ELSE 0 END), 0) AS total_given,
+                COALESCE(SUM(CASE WHEN ft.type IN ('repaid','received') THEN ft.amount ELSE 0 END), 0) AS total_repaid
          FROM friends f
          LEFT JOIN friend_transactions ft ON f.id = ft.friend_id
          WHERE f.user_id = ?
          GROUP BY f.id, f.name
-         ORDER BY f.name'
+         ORDER BY f.name"
     );
     $stmt->execute([$userId]);
     $friends = $stmt->fetchAll();
@@ -507,7 +499,7 @@ function getFriendMoneySummary(int $userId): array {
 function getGoalProjections(int $userId): array {
     $db = getDB();
     $stmt = $db->prepare(
-        'SELECT * FROM financial_goals WHERE user_id = ? AND status = "active" ORDER BY priority DESC, target_amount ASC'
+        "SELECT * FROM financial_goals WHERE user_id = ? AND status = 'active' ORDER BY priority DESC, target_amount ASC"
     );
     $stmt->execute([$userId]);
     $goals = $stmt->fetchAll();

@@ -183,9 +183,9 @@ function registerUser(string $name, string $email, string $password): array {
         
         // Create default financial settings
         $stmt = $db->prepare(
-            'INSERT INTO financial_settings (user_id, salary, salary_date, daily_travel_cost, 
+            "INSERT INTO financial_settings (user_id, salary, salary_date, daily_travel_cost, 
              recharge_amount, recharge_interval_days, recharge_provider, next_recharge_date, current_cash)
-             VALUES (?, 18000, 1, 40, 349, 90, "Jio", DATE_ADD(CURDATE(), INTERVAL 45 DAY), 2000)'
+             VALUES (?, 18000, 1, 40, 349, 90, 'Jio', DATE_ADD(CURDATE(), INTERVAL 45 DAY), 2000)"
         );
         $stmt->execute([$userId]);
         
