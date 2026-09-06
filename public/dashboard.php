@@ -1,4 +1,11 @@
 <?php
+
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+
+session_start();
+
+echo "Dashboard reached<br>";
 /**
  * DASHBOARD — Main Financial Overview
  */
