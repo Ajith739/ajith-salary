@@ -2,17 +2,6 @@
 /**
  * Login Page
  */
-session_name('MYFINANCE_SESSION');
-
-session_set_cookie_params([
-    'lifetime' => 0,
-    'path' => '/',
-    'secure' => true,
-    'httponly' => true,
-    'samesite' => 'Lax',
-]);
-
-session_start();
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/functions.php';
@@ -55,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $csrfToken = generateCSRFToken();
 ?>
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">

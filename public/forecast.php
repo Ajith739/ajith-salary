@@ -127,24 +127,24 @@ include __DIR__ . '/../includes/header.php';
             <thead>
                 <tr>
                     <th>Month</th>
-                    <th>Working Days</th>
-                    <th>Est. Income</th>
-                    <th>Est. Expenses</th>
-                    <th>Est. Monthly Savings</th>
-                    <th>Cumulative Balance</th>
+                    <th class="text-center">Working Days</th>
+                    <th class="text-right">Est. Income</th>
+                    <th class="text-right">Est. Expenses</th>
+                    <th class="text-right">Est. Monthly Savings</th>
+                    <th class="text-right">Cumulative Balance</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($forecast as $f): ?>
                 <tr>
                     <td style="font-weight: 600;"><?= e($f['month_name']) ?></td>
-                    <td><?= $f['working_days'] ?> Days</td>
-                    <td style="color: var(--success); font-weight: 600;"><?= formatINR($f['income']) ?></td>
-                    <td style="color: var(--danger-light); font-weight: 600;">-<?= formatINR($f['expenses']) ?></td>
-                    <td style="font-weight: 700; color: <?= $f['savings'] >= 0 ? 'var(--primary-light)' : 'var(--danger)' ?>;">
+                    <td class="text-center"><?= $f['working_days'] ?> Days</td>
+                    <td class="text-right" style="color: var(--success); font-weight: 600;"><?= formatINR($f['income']) ?></td>
+                    <td class="text-right" style="color: var(--danger-light); font-weight: 600;">-<?= formatINR($f['expenses']) ?></td>
+                    <td class="text-right" style="font-weight: 700; color: <?= $f['savings'] >= 0 ? 'var(--primary-light)' : 'var(--danger)' ?>;">
                         <?= $f['savings'] >= 0 ? '+' : '' ?><?= formatINR($f['savings']) ?>
                     </td>
-                    <td style="font-weight: 800; font-size: 1rem; color: var(--text-primary);">
+                    <td class="text-right" style="font-weight: 800; font-size: 1rem; color: var(--text-primary);">
                         <?= formatINR($f['balance']) ?>
                     </td>
                 </tr>

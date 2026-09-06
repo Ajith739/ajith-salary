@@ -415,11 +415,11 @@ function renderScheduleModal(principal, annualRate, tenureMonths, title) {
 
         rowsHtml += `
             <tr>
-                <td>${i}</td>
-                <td>${formatINRClient(emi)}</td>
-                <td>${formatINRClient(principalComp)}</td>
-                <td>${formatINRClient(interestComp)}</td>
-                <td>${formatINRClient(balance)}</td>
+                <td class="text-center">${i}</td>
+                <td class="text-right">${formatINRClient(emi)}</td>
+                <td class="text-right">${formatINRClient(principalComp)}</td>
+                <td class="text-right">${formatINRClient(interestComp)}</td>
+                <td class="text-right">${formatINRClient(balance)}</td>
             </tr>
         `;
     }
@@ -429,11 +429,11 @@ function renderScheduleModal(principal, annualRate, tenureMonths, title) {
             <table class="custom-table" style="font-size: 0.825rem;">
                 <thead>
                     <tr>
-                        <th>Mo #</th>
-                        <th>EMI</th>
-                        <th>Principal</th>
-                        <th>Interest</th>
-                        <th>Remaining</th>
+                        <th class="text-center">Mo #</th>
+                        <th class="text-right">EMI</th>
+                        <th class="text-right">Principal</th>
+                        <th class="text-right">Interest</th>
+                        <th class="text-right">Remaining</th>
                     </tr>
                 </thead>
                 <tbody>${rowsHtml}</tbody>

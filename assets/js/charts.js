@@ -208,9 +208,113 @@ window.FinanceCharts = (function() {
         });
     }
 
+    // Cumulative Savings Chart (Month-over-Month Wealth Accumulation)
+    function createCumulativeSavingsChart(canvasId, cumulativeData) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !cumulativeData || !cumulativeData.length) return null;
+
+        const ctx = canvas.getContext('2d');
+        const labels = cumulativeData.map(d => d.label);
+        const monthlySavings = cumulativeData.map(d => parseFloat(d.monthly_savings) || 0);
+        const cumulativeSavings = cumulativeData.map(d => parseFloat(d.cumulative_savings) || 0);
+
+        // Gradient for cumulative area fill
+        const cumGrad = ctx.createLinearGradient(0, 0, 0, 320);
+        cumGrad.addColorStop(0, 'rgba(16, 185, 129, 0.45)');
+        cumGrad.addColorStop(0.7, 'rgba(16, 185, 129, 0.12)');
+        cumGrad.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+
+        return new Chart(ctx, {
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        type: 'line',
+                        label: 'Accumulated Savings (Cumulative)',
+                        data: cumulativeSavings,
+                        borderColor: '#10b981',
+                        backgroundColor: cumGrad,
+                        fill: true,
+                        tension: 0.35,
+                        borderWidth: 3,
+                        pointBackgroundColor: '#10b981',
+                        pointBorderColor: isDark() ? '#111827' : '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        order: 1
+                    },
+                    {
+                        type: 'bar',
+                        label: 'Monthly Saved',
+                        data: monthlySavings,
+                        backgroundColor: isDark() ? 'rgba(99, 102, 241, 0.4)' : 'rgba(99, 102, 241, 0.22)',
+                        borderColor: '#6366f1',
+                        borderWidth: 1.5,
+                        borderRadius: 6,
+                        order: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: getTextColor(),
+                            font: { family: 'Inter', size: 12, weight: 600 },
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            padding: 15
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.92)',
+                        titleColor: '#f3f4f6',
+                        bodyColor: '#e5e7eb',
+                        borderColor: 'rgba(255, 255, 255, 0.1)',
+                        borderWidth: 1,
+                        padding: 12,
+                        cornerRadius: 10,
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + formatINR(context.raw);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: getGridColor() },
+                        ticks: { color: getTextColor(), font: { family: 'Inter', size: 11 } }
+                    },
+                    y: {
+                        grid: { color: getGridColor() },
+                        ticks: {
+                            color: getTextColor(),
+                            font: { family: 'Inter', size: 11 },
+                            callback: function(val) {
+                                if (Math.abs(val) >= 100000) return '₹' + (val / 100000).toFixed(1) + 'L';
+                                if (Math.abs(val) >= 1000) return '₹' + (val / 1000).toFixed(0) + 'k';
+                                return '₹' + val;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     return {
         formatINR: formatINR,
         createCashFlowChart: createCashFlowChart,
-        createExpenseDonutChart: createExpenseDonutChart
+        createExpenseDonutChart: createExpenseDonutChart,
+        createCumulativeSavingsChart: createCumulativeSavingsChart
     };
 })();

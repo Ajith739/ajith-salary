@@ -47,6 +47,20 @@ for ($i = 11; $i >= 0; $i--) {
     ];
 }
 
+// Compute 12-Month Cumulative Wealth Accumulation
+$cumulativeSavingsData = [];
+$runningSavings = 0;
+foreach ($trendData as $t) {
+    $runningSavings += (float)$t['savings'];
+    $cumulativeSavingsData[] = [
+        'label' => $t['label'],
+        'monthly_savings' => (float)$t['savings'],
+        'cumulative_savings' => $runningSavings
+    ];
+}
+$latestCumulative = !empty($cumulativeSavingsData) ? end($cumulativeSavingsData)['cumulative_savings'] : 0;
+$avgMonthlySavings = count($trendData) > 0 ? round($runningSavings / count($trendData), 2) : 0;
+
 // Category Breakdown (All-time or last 6 months)
 $stmt = $db->prepare(
     'SELECT category, SUM(amount) as total FROM expenses 
@@ -124,6 +138,33 @@ include __DIR__ . '/../includes/header.php';
     </div>
 </div>
 
+<!-- ─── CUMULATIVE WEALTH ACCUMULATION GRAPH ─── -->
+<div class="chart-card" data-animate style="margin-bottom: 1.75rem;">
+    <div class="chart-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h3 style="margin-bottom: 0.25rem;"><i class="fas fa-layer-group text-success"></i> Cumulative Wealth Accumulation (Month-over-Month)</h3>
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;">Progressive running total of savings accumulated each month (e.g. Month 1: ₹18,000 &rarr; Month 2: ₹36,000)</p>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+            <div style="text-align: right; background: var(--bg-hover); padding: 0.5rem 1rem; border-radius: 10px; border: 1px solid var(--border-color);">
+                <span style="font-size: 0.725rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: block; font-weight: 600;">Net Accumulated</span>
+                <span style="font-size: 1.25rem; font-weight: 800; color: <?= $latestCumulative >= 0 ? 'var(--success-light)' : 'var(--danger-light)' ?>;">
+                    <?= formatINR($latestCumulative) ?>
+                </span>
+            </div>
+            <div style="text-align: right; background: var(--bg-hover); padding: 0.5rem 1rem; border-radius: 10px; border: 1px solid var(--border-color);" class="d-none d-sm-block">
+                <span style="font-size: 0.725rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: block; font-weight: 600;">Avg / Month</span>
+                <span style="font-size: 1.25rem; font-weight: 800; color: var(--primary-light);">
+                    <?= formatINR($avgMonthlySavings) ?>
+                </span>
+            </div>
+        </div>
+    </div>
+    <div class="chart-body" style="height: 330px;">
+        <canvas id="cumulativeSavingsChart"></canvas>
+    </div>
+</div>
+
 <!-- ─── 12-MONTH TREND CHART ─── -->
 <div class="chart-card" data-animate style="margin-bottom: 1.75rem;">
     <div class="chart-header">
@@ -170,7 +211,7 @@ include __DIR__ . '/../includes/header.php';
                     <th>Expense Title</th>
                     <th>Category</th>
                     <th>Method</th>
-                    <th>Amount</th>
+                    <th class="text-right">Amount</th>
                     <th>Notes</th>
                 </tr>
             </thead>
@@ -189,7 +230,7 @@ include __DIR__ . '/../includes/header.php';
                         <span class="badge-custom status-active"><?= e($exp['category']) ?></span>
                     </td>
                     <td style="text-transform: uppercase; font-size: 0.8rem;"><?= e($exp['payment_method']) ?></td>
-                    <td style="font-weight: 800; color: var(--danger-light); font-size: 1.05rem;">
+                    <td class="text-right" style="font-weight: 800; color: var(--danger-light); font-size: 1.05rem;">
                         <?= formatINR((float)$exp['amount']) ?>
                     </td>
                     <td style="color: var(--text-muted); font-size: 0.825rem;"><?= e($exp['notes'] ?: '—') ?></td>
@@ -203,8 +244,14 @@ include __DIR__ . '/../includes/header.php';
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const trend = <?= json_encode($trendData) ?>;
+    const cumulativeSavings = <?= json_encode($cumulativeSavingsData) ?>;
     const categories = <?= json_encode($categoryBreakdown) ?>;
     const paymentMethods = <?= json_encode($paymentMethods) ?>;
+
+    // 0. Cumulative Savings Chart
+    if (document.getElementById('cumulativeSavingsChart') && cumulativeSavings.length) {
+        window.FinanceCharts.createCumulativeSavingsChart('cumulativeSavingsChart', cumulativeSavings);
+    }
 
     // 1. Trend Chart
     if (document.getElementById('analyticsTrendChart') && trend.length) {
