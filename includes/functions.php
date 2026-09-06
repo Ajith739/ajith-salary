@@ -4,6 +4,18 @@
  */
 
 /**
+ * Polyfill for cal_days_in_month when ext-calendar is not available (e.g. on serverless environments)
+ */
+if (!function_exists('cal_days_in_month')) {
+    if (!defined('CAL_GREGORIAN')) {
+        define('CAL_GREGORIAN', 0);
+    }
+    function cal_days_in_month($calendar, $month, $year) {
+        return (int)date('t', mktime(0, 0, 0, (int)$month, 1, (int)$year));
+    }
+}
+
+/**
  * Format amount in Indian Rupee notation: ₹1,23,456.00
  */
 function formatINR(float $amount, bool $showPaisa = false): string {
